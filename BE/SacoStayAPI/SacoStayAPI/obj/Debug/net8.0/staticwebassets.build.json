@@ -1,0 +1,12 @@
+{
+  "Version": 1,
+  "Hash": "iEXf6pghAzxL2Gm6kawdrAVbtU457GtIMeGy3aMYcFQ=",
+  "Source": "SacoStayAPI",
+  "BasePath": "_content/SacoStayAPI",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": [],
+  "Endpoints": []
+}

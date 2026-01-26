@@ -1,0 +1,12 @@
+# Visual Studio cache files
+.vs/
+*.suo
+*.dtbcache.v2
+*.futdcache.v2
+# Temporary build files
+**/bin/
+**/obj/
+**/obj
+**/.vs
+**/.cache
+node_modules/
