@@ -11,13 +11,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Controllers\" />
-    <Folder Include="Data\" />
     <Folder Include="Model\Entities\" />
     <Folder Include="Model\DTOs\" />
-    <Folder Include="Middelwares\" />
-    <Folder Include="Service\" />
-    <Folder Include="Repositories\" />
+    <Folder Include="Helper\" />
   </ItemGroup>
 
 </Project>
