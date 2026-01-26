@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SacoStayAPI")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2d295dd5eb225b43bcab3e262e5cc03c868f2562")]
 [assembly: System.Reflection.AssemblyProductAttribute("SacoStayAPI")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SacoStayAPI")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
