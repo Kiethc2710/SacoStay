@@ -3,6 +3,30 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Start SacoStay UI (cmd)",
+      "type": "shell",
+      "command": "npx ng serve",
+      "options": {
+        "cwd": "${workspaceFolder}/SacoStayUI",
+        "shell": {
+          "executable": "cmd.exe",
+          "args": ["/c"]
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "typescript",
+        "pattern": "$tsc",
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": { "regexp": "(.*?)" },
+          "endsPattern": { "regexp": "bundle generation complete" }
+        }
+      },
+      "group": "build",
+      "presentation": { "reveal": "always" }
+    },
+    {
       "type": "npm",
       "script": "start",
       "isBackground": true,
