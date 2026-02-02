@@ -24,20 +24,17 @@ namespace SacoStayAPI.Data
             modelBuilder.Entity<IdentityRoleClaim<Guid>>().ToTable("RoleClaims");
             modelBuilder.Entity<IdentityUserToken<Guid>>().ToTable("UserTokens");
 
-            //// Seed roles với GUID cố định
+            ////Seed roles với GUID cố định
             //var adminRoleId = Guid.Parse("11111111-1111-1111-1111-111111111111");
-            //var staffRoleId = Guid.Parse("22222222-2222-2222-2222-222222222222");
-            //var consultantRoleId = Guid.Parse("33333333-3333-3333-3333-333333333333");
-            //var managerRoleId = Guid.Parse("44444444-4444-4444-4444-444444444444");
-            //var customerRoleId = Guid.Parse("55555555-5555-5555-5555-555555555555");
+            //var tenantsRoleId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+            //var landlordRoleId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+            
             //modelBuilder.Entity<IdentityRole<Guid>>().HasData(
             //    new IdentityRole<Guid> { Id = adminRoleId, Name = "admin", NormalizedName = "ADMIN" },
-            //    new IdentityRole<Guid> { Id = staffRoleId, Name = "staff", NormalizedName = "STAFF" },
-            //    new IdentityRole<Guid> { Id = consultantRoleId, Name = "consultant", NormalizedName = "CONSULTANT" },
-            //    new IdentityRole<Guid> { Id = managerRoleId, Name = "manager", NormalizedName = "MANAGER" },
-            //    new IdentityRole<Guid> { Id = customerRoleId, Name = "customer", NormalizedName = "CUSTOMER" }
+            //    new IdentityRole<Guid> { Id = tenantsRoleId, Name = "tenants", NormalizedName = "TENANTS" },
+            //    new IdentityRole<Guid> { Id = landlordRoleId, Name = "landlord", NormalizedName = "LANDLORD" }
             //);
-
+            //tạo giá trị mặc định cho CreatedAt cho Account
             modelBuilder.Entity<Account>(entity =>
             {
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
