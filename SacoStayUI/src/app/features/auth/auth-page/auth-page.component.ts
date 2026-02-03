@@ -376,10 +376,10 @@ export class AuthPageComponent implements OnInit {
       error: (err) => {
         this.loginLoading = false;
         const status = err?.status;
-        if (status === 0 || err?.message?.includes('Http failure')) {
-          this.loginError = 'Không kết nối được API. Bạn đã chạy backend (SacoStayAPI) chưa?';
-        } else if (status === 401) {
+        if (status === 401) {
           this.loginError = 'Email/số điện thoại hoặc mật khẩu không đúng.';
+        } else if (status === 0 || err?.message?.includes('Http failure')) {
+          this.loginError = 'Không kết nối được API hoặc sai tên đăng nhập/mật khẩu. Nếu đã bật backend, kiểm tra CORS.';
         } else {
           this.loginError = err?.error?.message || 'Đăng nhập thất bại. Thử lại sau.';
         }

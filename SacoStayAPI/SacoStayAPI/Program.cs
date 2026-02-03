@@ -125,6 +125,20 @@ namespace SacoStayAPI
             }
 
             app.UseHttpsRedirection();
+            app.Use(async (context, next) =>
+            {
+                context.Response.OnStarting(() =>
+                {
+                    if (!context.Response.Headers.ContainsKey("Access-Control-Allow-Origin"))
+                    {
+                        context.Response.Headers.Append("Access-Control-Allow-Origin", "*");
+                        context.Response.Headers.Append("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+                        context.Response.Headers.Append("Access-Control-Allow-Headers", "Content-Type, Authorization");
+                    }
+                    return Task.CompletedTask;
+                });
+                await next();
+            });
             app.UseCors("AllowAngularDev");
             app.UseRouting();
 
