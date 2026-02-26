@@ -355,7 +355,6 @@ namespace SacoStayAPI.Controllers
 
             return Ok("Reset mật khẩu thành công");
         }
-        //thêm cái j nz
-        //làm mệt r nha
+       
     }
 }
