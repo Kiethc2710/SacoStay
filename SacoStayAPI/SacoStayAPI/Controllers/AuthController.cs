@@ -26,7 +26,7 @@ namespace SacoStayAPI.Controllers
         private readonly IMemoryCache _cache;
 
 
-        public AuthController(RoleManager<IdentityRole<Guid>> roleManager, 
+        public AuthController(RoleManager<IdentityRole<Guid>> roleManager,
                                 UserManager<Account> userManager,
                                 IConfiguration configuration,
                                 IMemoryCache cache,
@@ -77,7 +77,9 @@ namespace SacoStayAPI.Controllers
                 // Login bằng số điện thoại
                 user = _userManager.Users
                     .FirstOrDefault(u => u.PhoneNumber == dto.EmailPhoneorUsername);
-            }else { 
+            }
+            else
+            {
                 user = await _userManager.FindByNameAsync(dto.EmailPhoneorUsername);
             }
             if (user == null)
@@ -91,6 +93,8 @@ namespace SacoStayAPI.Controllers
                 return Unauthorized("Invalid password");
 
             // Nếu mọi thứ hợp lệ, login thành công
+            if (!await _userManager.IsEmailConfirmedAsync(user))
+                return Unauthorized("Email chưa được xác nhận");
             var token = await GenerateJwtToken(user);
             return Ok(new { token });
         }
@@ -157,8 +161,8 @@ namespace SacoStayAPI.Controllers
             {
                 return BadRequest(new { message = "Số điện thoại đã tồn tại" });
             }
-             // 5. Tạo user mới (để password hash do UserManager xử lý)
-                var user = new Account
+            // 5. Tạo user mới (để password hash do UserManager xử lý)
+            var user = new Account
             {
                 UserName = dto.UserName,
                 Email = dto.Email,
@@ -168,13 +172,14 @@ namespace SacoStayAPI.Controllers
             var result = await _userManager.CreateAsync(user, dto.Password);
 
             if (result.Succeeded)
-            { 
+            {
                 // 5. Gán role Customer mặc định
                 if (!await _roleManager.RoleExistsAsync("tenants"))
                 {
                     await _roleManager.CreateAsync(new IdentityRole<Guid>("tenants"));
                 }
                 await _userManager.AddToRoleAsync(user, "tenants");
+
                 // 1. Generate token của Identity
                 var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
 
@@ -199,15 +204,50 @@ namespace SacoStayAPI.Controllers
                 {
                     message = "Đăng ký thành công. Vui lòng nhập OTP gửi về email."
                 });
-
-                return Ok(new { message = "Registration successful! Please check your email for confirmation." });
-
             }
-
             // Trả lỗi nếu tạo user thất bại
             return BadRequest(result.Errors);
         }
-        //Xca nhận email bằng OTP
+        //Resend OTP
+        [HttpPost("resend-otp")]
+        public async Task<IActionResult> ResendOtp([FromBody] ResendOtpDTO dto)
+        {
+            if (string.IsNullOrEmpty(dto.Email))
+                return BadRequest("Email không hợp lệ");
+
+            var user = await _userManager.FindByEmailAsync(dto.Email);
+
+            if (user == null)
+                return BadRequest("Email không tồn tại");
+
+            if (await _userManager.IsEmailConfirmedAsync(user))
+                return BadRequest("Email đã được xác nhận");
+
+            // Generate lại token mới
+            var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+
+            // Tạo OTP mới
+            var otp = new Random().Next(100000, 999999).ToString();
+
+            // Ghi đè OTP cũ trong cache (tự động xóa cái cũ)
+            //cái cache sẽ tạo 1 cặp key:value, trong đó key là email_confirm_email,
+            //value là 1 object chứa otp và token, thời gian tồn tại 5 phút
+            _cache.Set(
+                $"email_confirm_{user.Email}",
+                new { Otp = otp, Token = token },
+                TimeSpan.FromMinutes(5)
+            );
+
+            // Gửi mail lại
+            await _emailService.SendEmailAsync(
+                user.Email,
+                "Gửi lại mã OTP xác nhận email",
+                $"Mã OTP mới của bạn là: <b>{otp}</b>. Hết hạn sau 5 phút."
+            );
+
+            return Ok("Đã gửi lại OTP mới");
+        }
+        //Xác nhận email bằng OTP
         [HttpPost("verify-email-otp")]
         public async Task<IActionResult> VerifyEmailOtp(string email, string otp)
         {
@@ -215,7 +255,9 @@ namespace SacoStayAPI.Controllers
 
             if (user == null)
                 return BadRequest("Email không tồn tại");
-
+            //lấy token từ cache dựa vào email, nếu không có nghĩa là OTP đã hết hạn hoặc chưa từng tạo
+            //otp mình tạo cho có cái để chơi thôi, nhma cái zúp nó xác nhận chính là token của Identity,
+            //nên phải lưu token đó vào cache để tí xác nhận
             if (!_cache.TryGetValue($"email_confirm_{email}", out dynamic data))
                 return BadRequest("OTP đã hết hạn");
 
@@ -230,6 +272,88 @@ namespace SacoStayAPI.Controllers
             _cache.Remove($"email_confirm_{email}");
 
             return Ok("Xác nhận email thành công");
+        }
+       
+        [HttpPost("forgot-password")]
+        public async Task<IActionResult> ForgotPassword([FromBody] ResendOtpDTO dto)
+        {
+            var user = await _userManager.FindByEmailAsync(dto.Email);
+
+            // Không tiết lộ email tồn tại hay không
+            if (user == null)
+                return Ok("Nếu email tồn tại, chúng tôi đã gửi mã OTP.");
+
+            if (!await _userManager.IsEmailConfirmedAsync(user))
+                return BadRequest("Email chưa được xác nhận.");
+
+            var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+            var otp = new Random().Next(100000, 999999).ToString();
+
+            _cache.Set(
+                $"reset_pwd_{dto.Email}",
+                new OtpCacheModel
+                {
+                    Otp = otp,
+                    Token = token
+                },
+                TimeSpan.FromMinutes(5)
+            );
+
+            await _emailService.SendEmailAsync(
+                dto.Email,
+                "Reset mật khẩu",
+                $"Mã OTP của bạn là: <b>{otp}</b>"
+            );
+
+            return Ok("Nếu email tồn tại, chúng tôi đã gửi mã OTP.");
+        }
+        [HttpPost("verify-reset-otp")]
+        public IActionResult VerifyResetOtp([FromBody] VerifyOtpDTO dto)
+        {
+            if (!_cache.TryGetValue($"reset_pwd_{dto.Email}", out OtpCacheModel data))
+                return BadRequest("OTP đã hết hạn");
+
+            if (data.Otp != dto.Otp)
+                return BadRequest("OTP không đúng");
+
+            // đánh dấu đã verify
+            _cache.Set(
+                $"reset_verified_{dto.Email}",
+                true,
+                TimeSpan.FromMinutes(5)
+            );
+
+            return Ok("OTP hợp lệ");
+        }
+        [HttpPost("reset-password")]
+        public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDTO dto)
+        {
+            var user = await _userManager.FindByEmailAsync(dto.Email);
+
+            if (user == null)
+                return BadRequest("Email không hợp lệ");
+
+            // kiểm tra đã verify OTP chưa
+            if (!_cache.TryGetValue($"reset_verified_{dto.Email}", out bool verified) || !verified)
+                return BadRequest("Bạn chưa xác thực OTP");
+
+            if (!_cache.TryGetValue($"reset_pwd_{dto.Email}", out OtpCacheModel data))
+                return BadRequest("Phiên reset không hợp lệ");
+
+            var result = await _userManager.ResetPasswordAsync(
+                user,
+                data.Token,
+                dto.NewPassword
+            );
+
+            if (!result.Succeeded)
+                return BadRequest(result.Errors);
+
+            // Xóa cache
+            _cache.Remove($"reset_pwd_{dto.Email}");
+            _cache.Remove($"reset_verified_{dto.Email}");
+
+            return Ok("Reset mật khẩu thành công");
         }
 
     }
