@@ -47,3 +47,12 @@ cd <tên-thư-mục-api>
 dotnet run
 ```
 > ⚙️ Lệnh này sẽ khởi động backend ASP.NET Core và phục vụ các API.
+3. Các lệnh cho migration(CodeFirst)
+```bash
+dotnet ef migrations add TenMigration //tạo migration
+dotnet ef database update            
+
+dotnet ef migrations list          // xem danh sách migration
+dotnet ef migrations remove        // xoá migration cuối (chưa update DB)
+dotnet ef database drop            // xoá database
+```
