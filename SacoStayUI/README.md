@@ -43,6 +43,10 @@ To execute unit tests with the [Karma](https://karma-runner.github.io) test runn
 ```bash
 ng test
 ```
+## Install
+```bash
+npm install ng-zorro-antd
+```
 
 ## Running end-to-end tests
 
