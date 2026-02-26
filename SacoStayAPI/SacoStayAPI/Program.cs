@@ -5,8 +5,9 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SacoStayAPI.Data;
 using SacoStayAPI.Model.Entities;
-using System.Text;
+using SacoStayAPI.Services;
 using System.IdentityModel.Tokens.Jwt;
+using System.Text;
 
 
 namespace SacoStayAPI
@@ -20,7 +21,8 @@ namespace SacoStayAPI
             // ================= SERVICES =================
 
             builder.Services.AddControllers();
-
+            builder.Services.AddMemoryCache();
+            builder.Services.AddScoped<EmailService>();
             // Swagger + Bearer
             builder.Services.AddSwaggerGen(c =>
             {
