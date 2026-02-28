@@ -1,5 +1,6 @@
 ﻿using SacoStayAPI.Model.Entities;
 using SacoStayAPI.Repositories;
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -143,8 +144,8 @@ namespace SacoStayAPI.Service
             var vnp_Url = _configuration["VNPay:BaseUrl"];
             var vnp_ReturnUrl = _configuration["VNPay:ReturnUrl"];
 
-            // Tạo danh sách param và sort tự động
-            var vnp_Params = new SortedDictionary<string, string>
+            // SỬA LỖI 3: Thêm StringComparer.Ordinal để sort chuẩn ASCII theo yêu cầu VNPay
+            var vnp_Params = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
         { "vnp_Version", "2.1.0" },
         { "vnp_Command", "pay" },
@@ -152,34 +153,40 @@ namespace SacoStayAPI.Service
         { "vnp_Amount", ((long)(amount * 100)).ToString() },
         { "vnp_CreateDate", DateTime.Now.ToString("yyyyMMddHHmmss") },
         { "vnp_CurrCode", "VND" },
-        { "vnp_IpAddr", "127.0.0.1" },
+        { "vnp_IpAddr", "127.0.0.1" }, // Chú ý: Cần lấy IP thực của client khi lên Production
         { "vnp_Locale", "vn" },
-        { "vnp_OrderInfo", "ThanhToan" }, // không dấu, không space
+        { "vnp_OrderInfo", "ThanhToan" },
         { "vnp_OrderType", "other" },
         { "vnp_ReturnUrl", vnp_ReturnUrl },
         { "vnp_TxnRef", orderId }
     };
 
-            // =========================
-            // 1. TẠO RAW DATA ĐỂ HASH (KHÔNG ENCODE)
-            // =========================
-            var rawData = new StringBuilder();
+            var hashData = new StringBuilder();
+            var queryString = new StringBuilder();
 
+            // SỬA LỖI 1: Build chung một data chứa cả Key và Value đã được URL Encode
             foreach (var kvp in vnp_Params)
             {
                 if (!string.IsNullOrEmpty(kvp.Value))
                 {
-                    rawData.Append($"{kvp.Key}={kvp.Value}&");
+                    var encodedKey = WebUtility.UrlEncode(kvp.Key);
+                    var encodedValue = WebUtility.UrlEncode(kvp.Value);
+
+                    hashData.Append($"{encodedKey}={encodedValue}&");
+                    queryString.Append($"{encodedKey}={encodedValue}&");
                 }
             }
 
-            rawData.Length -= 1; // bỏ dấu & cuối
+            // Bỏ dấu & cuối cùng
+            if (hashData.Length > 0)
+            {
+                hashData.Length -= 1;
+                queryString.Length -= 1;
+            }
 
-            // =========================
-            // 2. TẠO CHỮ KÝ HMAC SHA512
-            // =========================
+            // TẠO CHỮ KÝ HMAC SHA512
             var secretBytes = Encoding.UTF8.GetBytes(vnp_HashSecret);
-            var dataBytes = Encoding.UTF8.GetBytes(rawData.ToString());
+            var dataBytes = Encoding.UTF8.GetBytes(hashData.ToString());
 
             using var hmac = new HMACSHA512(secretBytes);
             var hashBytes = hmac.ComputeHash(dataBytes);
@@ -188,26 +195,10 @@ namespace SacoStayAPI.Service
                 .Replace("-", "")
                 .ToLower();
 
-            // =========================
-            // 3. BUILD QUERY STRING (ENCODE)
-            // =========================
-            var queryString = new StringBuilder();
+            // SỬA LỖI 2: Không truyền vnp_SecureHashType nữa, chỉ thêm vnp_SecureHash
+            queryString.Append($"&vnp_SecureHash={secureHash}");
 
-            foreach (var kvp in vnp_Params)
-            {
-                if (!string.IsNullOrEmpty(kvp.Value))
-                {
-                    queryString.Append($"{kvp.Key}={Uri.EscapeDataString(kvp.Value)}&");
-                }
-            }
-
-            // Thêm loại hash
-            queryString.Append($"vnp_SecureHashType=HmacSHA512&");
-            queryString.Append($"vnp_SecureHash={secureHash}");
-
-            // =========================
-            // 4. TẠO PAYMENT URL
-            // =========================
+            // TẠO PAYMENT URL
             var paymentUrl = $"{vnp_Url}?{queryString}";
 
             return paymentUrl;
