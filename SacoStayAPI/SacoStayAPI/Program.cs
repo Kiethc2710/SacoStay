@@ -5,6 +5,8 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SacoStayAPI.Data;
 using SacoStayAPI.Model.Entities;
+using SacoStayAPI.Repositories;
+using SacoStayAPI.Service;
 using SacoStayAPI.Services;
 using System.IdentityModel.Tokens.Jwt;
 using System.Text;
@@ -98,7 +100,8 @@ namespace SacoStayAPI
                 });
 
             builder.Services.AddAuthorization();
-
+            builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
+            builder.Services.AddScoped<IPaymentService, PaymentService>();
             // CORS cho Angular
             builder.Services.AddCors(options =>
             {

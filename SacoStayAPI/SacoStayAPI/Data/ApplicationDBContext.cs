@@ -11,7 +11,7 @@ namespace SacoStayAPI.Data
         {
         }
         public DbSet<Account> Accounts { get; set; }
-
+        public DbSet<PaymentTransaction> PaymentTransactions { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder); // đừng quên gọi base để Identity hoạt động đúng

@@ -1,0 +1,307 @@
+# 📘 SacoStayAPI
+
+## 🏗 Project Architecture
+
+Project được xây dựng theo mô hình:
+
+Controller → Service → GenericRepository → DbContext → Database
+
+### 🔹 Layer Responsibilities
+
+| Layer | Responsibility |
+|-------|---------------|
+| Controller | Nhận HTTP request và trả response |
+| Service | Xử lý business logic |
+| Repository | Giao tiếp với database |
+| DbContext | Quản lý Entity Framework |
+| Entity | Đại diện bảng trong database |
+
+---
+
+# 📂 Project Structure
+
+```
+📁 Data
+   └── ApplicationDBContext.cs
+
+📁 Entities
+   └── YourEntity.cs
+
+📁 Repositories
+   ├── IGenericRepository.cs
+   └── GenericRepository.cs
+
+📁 Services
+   ├── IYourService.cs
+   └── YourService.cs
+
+📁 Controllers
+   └── YourController.cs
+
+📄 Program.cs
+```
+
+---
+
+# 🚀 How To Create A New API
+
+---
+
+## 🧱 STEP 1 – Create Entity
+
+📁 `Entities/YourEntity.cs`
+
+```csharp
+public class YourEntity
+{
+    public int Id { get; set; }
+
+    public string Name { get; set; }
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+```
+
+---
+
+## 🧱 STEP 2 – Add DbSet to DbContext
+
+📁 `ApplicationDBContext.cs`
+
+```csharp
+public DbSet<YourEntity> YourEntities { get; set; }
+```
+
+Run migration:
+
+```bash
+add-migration AddYourEntity
+update-database
+```
+
+---
+
+## 🧱 STEP 3 – Create Service Interface
+
+📁 `Services/IYourService.cs`
+
+```csharp
+public interface IYourService
+{
+    Task<IEnumerable<YourEntity>> GetAllAsync();
+    Task<YourEntity?> GetByIdAsync(int id);
+    Task CreateAsync(YourEntity entity);
+    Task UpdateAsync(int id, YourEntity entity);
+    Task DeleteAsync(int id);
+}
+```
+
+---
+
+## 🧱 STEP 4 – Implement Service
+
+📁 `Services/YourService.cs`
+
+```csharp
+public class YourService : IYourService
+{
+    private readonly IGenericRepository<YourEntity> _repo;
+    private readonly ApplicationDBContext _context;
+
+    public YourService(
+        IGenericRepository<YourEntity> repo,
+        ApplicationDBContext context)
+    {
+        _repo = repo;
+        _context = context;
+    }
+
+    public async Task<IEnumerable<YourEntity>> GetAllAsync()
+    {
+        return await _repo.GetAllAsync();
+    }
+
+    public async Task<YourEntity?> GetByIdAsync(int id)
+    {
+        return await _repo.GetByIdAsync(id);
+    }
+
+    public async Task CreateAsync(YourEntity entity)
+    {
+        await _repo.AddAsync(entity);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task UpdateAsync(int id, YourEntity entity)
+    {
+        var existing = await _repo.GetByIdAsync(id);
+        if (existing == null) return;
+
+        existing.Name = entity.Name;
+
+        _repo.Update(existing);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task DeleteAsync(int id)
+    {
+        var existing = await _repo.GetByIdAsync(id);
+        if (existing == null) return;
+
+        _repo.Remove(existing);
+        await _context.SaveChangesAsync();
+    }
+}
+```
+
+⚠ Important:  
+GenericRepository không gọi `SaveChangesAsync()` nên phải gọi trong Service.
+
+---
+
+## 🧱 STEP 5 – Create Controller
+
+📁 `Controllers/YourController.cs`
+
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+public class YourController : ControllerBase
+{
+    private readonly IYourService _service;
+
+    public YourController(IYourService service)
+    {
+        _service = service;
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetAll()
+    {
+        var data = await _service.GetAllAsync();
+        return Ok(data);
+    }
+
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetById(int id)
+    {
+        var data = await _service.GetByIdAsync(id);
+
+        if (data == null)
+            return NotFound();
+
+        return Ok(data);
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> Create(YourEntity entity)
+    {
+        await _service.CreateAsync(entity);
+        return Ok("Created successfully");
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, YourEntity entity)
+    {
+        await _service.UpdateAsync(id, entity);
+        return Ok("Updated successfully");
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        await _service.DeleteAsync(id);
+        return Ok("Deleted successfully");
+    }
+}
+```
+
+---
+
+## 🧱 STEP 6 – Register Dependency Injection
+
+📁 `Program.cs`
+
+```csharp
+builder.Services.AddScoped(typeof(IGenericRepository<>), typeof(GenericRepository<>));
+builder.Services.AddScoped<IYourService, YourService>();
+```
+
+---
+
+# 📌 API Naming Convention
+
+| Action | HTTP Method | Route |
+|--------|------------|-------|
+| Get All | GET | /api/entity |
+| Get By Id | GET | /api/entity/{id} |
+| Create | POST | /api/entity |
+| Update | PUT | /api/entity/{id} |
+| Delete | DELETE | /api/entity/{id} |
+
+---
+
+# 🔥 Development Rules
+
+- Không viết business logic trong Controller
+- Không gọi DbContext trực tiếp trong Controller
+- Service xử lý toàn bộ nghiệp vụ
+- Repository chỉ giao tiếp database
+- SaveChanges phải được gọi trong Service
+- Tên API theo RESTful convention
+
+---
+
+# 🧠 API Flow Diagram
+
+```
+Client
+   ↓
+Controller
+   ↓
+Service
+   ↓
+GenericRepository<T>
+   ↓
+DbContext
+   ↓
+Database
+```
+
+---
+
+# ✅ Development Checklist
+
+Khi tạo API mới, thực hiện:
+
+- [ ] Tạo Entity
+- [ ] Thêm DbSet vào DbContext
+- [ ] Tạo Service Interface
+- [ ] Implement Service
+- [ ] Tạo Controller
+- [ ] Đăng ký DI
+- [ ] Migration & Update Database
+- [ ] Test bằng Swagger
+
+---
+
+# 🛠 Technologies Used
+
+- ASP.NET Core Web API
+- Entity Framework Core
+- SQL Server
+- Swagger
+
+---
+
+# 📦 Summary
+
+Project sử dụng kiến trúc tách tầng rõ ràng:
+
+Controller → Service → Repository → Database
+
+Giúp:
+- Dễ bảo trì
+- Dễ mở rộng
+- Dễ test
+- Chuẩn Clean Architecture
