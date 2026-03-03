@@ -8,7 +8,11 @@ namespace SacoStayAPI.Model.Entities
         public string? LastName { get; set; }
         public DateOnly DateOfBirth { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-        public bool? Gender { get; set; } // 0 female, 1 male
+        public bool? Gender { get; set; } 
+
+        public string? Job { get; set; }
+        public string? LivingArea { get; set; }
+        public string? Bio { get; set; }
 
     }
 }

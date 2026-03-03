@@ -11,6 +11,7 @@ namespace SacoStayAPI.Data
         {
         }
         public DbSet<Account> Accounts { get; set; }
+        public DbSet<ChatMessage> ChatMessages { get; set; }
         public DbSet<PaymentTransaction> PaymentTransactions { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -23,12 +24,20 @@ namespace SacoStayAPI.Data
             modelBuilder.Entity<IdentityUserLogin<Guid>>().ToTable("UserLogins");
             modelBuilder.Entity<IdentityRoleClaim<Guid>>().ToTable("RoleClaims");
             modelBuilder.Entity<IdentityUserToken<Guid>>().ToTable("UserTokens");
+            modelBuilder.Entity<ChatMessage>(entity =>
+            {
+                entity.HasKey(e => e.Id); 
 
+                entity.HasOne(m => m.Sender)
+                      .WithMany()
+                      .HasForeignKey(m => m.SenderId)
+                      .OnDelete(DeleteBehavior.Restrict); // Không xóa tin nhắn khi xóa user để giữ lịch sử chat
+            });
             ////Seed roles với GUID cố định
             //var adminRoleId = Guid.Parse("11111111-1111-1111-1111-111111111111");
             //var tenantsRoleId = Guid.Parse("22222222-2222-2222-2222-222222222222");
             //var landlordRoleId = Guid.Parse("33333333-3333-3333-3333-333333333333");
-            
+
             //modelBuilder.Entity<IdentityRole<Guid>>().HasData(
             //    new IdentityRole<Guid> { Id = adminRoleId, Name = "admin", NormalizedName = "ADMIN" },
             //    new IdentityRole<Guid> { Id = tenantsRoleId, Name = "tenants", NormalizedName = "TENANTS" },

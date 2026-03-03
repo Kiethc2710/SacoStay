@@ -124,6 +124,12 @@ namespace SacoStayAPI.Controllers
                 user.UserName,
                 user.Email,
                 user.PhoneNumber,
+                user.FirstName,
+                user.LastName,
+                user.Gender,
+                user.Job,
+                user.DateOfBirth,
+                user.Bio,
                 Roles = roles
             });
         }
@@ -273,7 +279,7 @@ namespace SacoStayAPI.Controllers
 
             return Ok("Xác nhận email thành công");
         }
-       
+
         [HttpPost("forgot-password")]
         public async Task<IActionResult> ForgotPassword([FromBody] ResendOtpDTO dto)
         {
@@ -355,6 +361,32 @@ namespace SacoStayAPI.Controllers
 
             return Ok("Reset mật khẩu thành công");
         }
-       
+
+        [Authorize(AuthenticationSchemes = "Bearer")]
+        [HttpPut("update-profile")]
+        public async Task<IActionResult> UpdateProfile([FromBody] UserProfileDTO dto)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null) return NotFound("Người dùng không tồn tại");
+
+            if (!string.IsNullOrEmpty(dto.FirstName)) user.FirstName = dto.FirstName;
+            if (!string.IsNullOrEmpty(dto.LastName)) user.LastName = dto.LastName;
+            if (!string.IsNullOrEmpty(dto.PhoneNumber)) user.PhoneNumber = dto.PhoneNumber;
+            if (!string.IsNullOrEmpty(dto.Job)) user.Job = dto.Job;
+            if (!string.IsNullOrEmpty(dto.LivingArea)) user.LivingArea = dto.LivingArea;
+            if (!string.IsNullOrEmpty(dto.Bio)) user.Bio = dto.Bio;
+
+            if (dto.Gender.HasValue) user.Gender = dto.Gender.Value;
+            if (dto.DateOfBirth.HasValue) user.DateOfBirth = dto.DateOfBirth.Value;
+
+            var result = await _userManager.UpdateAsync(user);
+            if (result.Succeeded) return Ok(new { message = "Cập nhật thành công" });
+
+            return BadRequest(result.Errors);
+        }
+
     }
 }
