@@ -1,11 +1,27 @@
-# SacoStayUI
+# SacoStay UI - Frontend Application
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 20.0.0.
+## 🚀 Quick Start
 
-## Development server
+### Fix PowerShell Execution Policy
+Nếu gặp lỗi `npm : File E:\NodeJS\npm.ps1 cannot be loaded`, chạy PowerShell với quyền Admin và thực hiện:
 
-To start a local development server, run:
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
 
+### Start Development Server
+
+**Cách 1: Sử dụng PowerShell script (khuyên khuyên)**
+```powershell
+.\start-dev.ps1
+```
+
+**Cách 2: Sử dụng npm**
+```bash
+npm start
+```
+
+**Cách 3: Sử dụng Angular CLI**
 ```bash
 ng serve
 ```

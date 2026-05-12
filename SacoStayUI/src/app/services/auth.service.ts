@@ -2,8 +2,8 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { Observable, tap, catchError, of } from 'rxjs';
-import { environment } from '../../../environments/environment';
-import type { LoginRequest, LoginResponse, UserProfile } from './models/auth.models';
+import { environment } from '../../environments/environment';
+import type { LoginRequest, LoginResponse, UserProfile, RegisterRequest, RegisterResponse } from '../models/auth.models';
 
 const TOKEN_KEY = 'saco_stay_token';
 
@@ -34,6 +34,10 @@ export class AuthService {
   logout(): void {
     localStorage.removeItem(TOKEN_KEY);
     this.router.navigate(['/login']);
+  }
+
+  register(body: RegisterRequest): Observable<RegisterResponse> {
+    return this.http.post<RegisterResponse>(`${this.apiUrl}/auth/register`, body);
   }
 
   getProfile(): Observable<UserProfile | null> {
