@@ -11,7 +11,6 @@ using SacoStayAPI.Services;
 using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 
-
 namespace SacoStayAPI
 {
     public class Program
@@ -20,21 +19,21 @@ namespace SacoStayAPI
         {
             var builder = WebApplication.CreateBuilder(args);
 
-            // ================= SERVICES =================
+            // ================= 1. REGISTER SERVICES =================
 
-            builder.Services.AddSignalR();
             builder.Services.AddControllers();
+            builder.Services.AddSignalR();
             builder.Services.AddMemoryCache();
+
+            // Dependency Injection
             builder.Services.AddScoped<EmailService>();
+            builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
+            builder.Services.AddScoped<IPaymentService, PaymentService>();
+
             // Swagger + Bearer
             builder.Services.AddSwaggerGen(c =>
             {
-                c.SwaggerDoc("v1", new OpenApiInfo
-                {
-                    Title = "SacoStay API",
-                    Version = "v1"
-                });
-
+                c.SwaggerDoc("v1", new OpenApiInfo { Title = "SacoStay API", Version = "v1" });
                 c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
                 {
                     Description = "Enter 'Bearer' [space] and then your token",
@@ -43,47 +42,36 @@ namespace SacoStayAPI
                     Type = SecuritySchemeType.ApiKey,
                     Scheme = "Bearer"
                 });
-
                 c.AddSecurityRequirement(new OpenApiSecurityRequirement
                 {
                     {
                         new OpenApiSecurityScheme
                         {
-                            Reference = new OpenApiReference
-                            {
-                                Type = ReferenceType.SecurityScheme,
-                                Id = "Bearer"
-                            }
+                            Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
                         },
                         Array.Empty<string>()
                     }
                 });
             });
 
-            // DbContext
-            //builder.Services.AddDbContext<ApplicationDBContext>(options =>
-            //    options.UseSqlServer(
-            //        builder.Configuration.GetConnectionString("DefaultConnection")
-            //    )
-            //);
-           
+            // Database (PostgreSQL)
             builder.Services.AddDbContext<ApplicationDBContext>(options =>
-                options.UseNpgsql(
-                    builder.Configuration.GetConnectionString("DefaultConnection")
-                    )
-             );
+                options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
             // Identity
             builder.Services.AddIdentity<Account, IdentityRole<Guid>>(options =>
             {
-                //options.SignIn.RequireConfirmedEmail = true;
                 options.User.RequireUniqueEmail = true;
+                options.Password.RequireDigit = false; // Tùy ch?nh ?? khó m?t kh?u n?u c?n
+                options.Password.RequiredLength = 6;
+                options.Password.RequireNonAlphanumeric = false;
+                options.Password.RequireUppercase = false;
             })
             .AddEntityFrameworkStores<ApplicationDBContext>()
             .AddDefaultTokenProviders();
 
-            // JWT
+            // JWT Authentication
             var jwt = builder.Configuration.GetSection("Jwt");
-
             builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(options =>
                 {
@@ -93,16 +81,15 @@ namespace SacoStayAPI
                         ValidateAudience = true,
                         ValidateLifetime = true,
                         ValidateIssuerSigningKey = true,
-
                         ValidIssuer = jwt["Issuer"],
                         ValidAudience = jwt["Audience"],
-                        IssuerSigningKey = new SymmetricSecurityKey(
-                            Encoding.UTF8.GetBytes(jwt["Key"])
-                        ),
+                        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt["Key"])),
                         NameClaimType = JwtRegisteredClaimNames.Sub,
                         RoleClaimType = "role",
                         ClockSkew = TimeSpan.Zero
                     };
+
+                    // C?u hình cho SignalR nh?n Token t? Query String
                     options.Events = new JwtBearerEvents
                     {
                         OnMessageReceived = context =>
@@ -119,20 +106,18 @@ namespace SacoStayAPI
                 });
 
             builder.Services.AddAuthorization();
-            builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
-            builder.Services.AddScoped<IPaymentService, PaymentService>();
-            // CORS cho Angular
             builder.Services.AddCors(options =>
             {
-                options.AddPolicy("AllowAngularDev", policy =>
+                options.AddPolicy("AllowAll", policy =>
                 {
                     policy.AllowAnyHeader()
                           .AllowAnyMethod()
-                          .AllowAnyOrigin();
+                          .SetIsOriginAllowed(_ => true) 
+                          .AllowCredentials(); 
                 });
             });
 
-            // ================= APP =================
+            // ================= 2. BUILD APP =================
 
             var app = builder.Build();
 
@@ -142,6 +127,8 @@ namespace SacoStayAPI
                 await SeedData.InitializeAsync(scope.ServiceProvider);
             }
 
+            // ================= 3. MIDDLEWARE PIPELINE =================
+
             if (app.Environment.IsDevelopment())
             {
                 app.UseSwagger();
@@ -149,35 +136,18 @@ namespace SacoStayAPI
             }
 
             app.UseHttpsRedirection();
-            app.Use(async (context, next) =>
-            {
-                context.Response.OnStarting(() =>
-                {
-                    if (!context.Response.Headers.ContainsKey("Access-Control-Allow-Origin"))
-                    {
-                        context.Response.Headers.Append("Access-Control-Allow-Origin", "*");
-                        context.Response.Headers.Append("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-                        context.Response.Headers.Append("Access-Control-Allow-Headers", "Content-Type, Authorization");
-                    }
-                    return Task.CompletedTask;
-                });
-                await next();
-            });
-            app.UseCors("AllowAngularDev");
+
+            // S? d?ng CORS tr??c Routing/Auth
+            app.UseCors("AllowAll");
+
             app.UseRouting();
 
             app.UseAuthentication();
             app.UseAuthorization();
+
+            // Map Endpoints
             app.MapHub<ChatHub>("/chatHub");
-
             app.MapControllers();
-
-            builder.Services.AddCors(options => {
-                options.AddPolicy("AllowAll", policy => {
-                    policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
-                });
-            });
-            app.UseCors("AllowAll");
 
             app.Run();
         }
