@@ -179,12 +179,18 @@ namespace SacoStayAPI.Controllers
 
             if (result.Succeeded)
             {
-                // 5. Gán role Customer mặc định
-                if (!await _roleManager.RoleExistsAsync("tenants"))
+                // 5. Gán role theo DTO
+                //string roleName = string.IsNullOrEmpty(dto.Role) ? "tenants" : dto.Role;
+
+                // Kiểm tra xem Role có tồn tại trong hệ thống chưa, nếu chưa thì tạo mới
+                if (!await _roleManager.RoleExistsAsync(dto.Role))
                 {
-                    await _roleManager.CreateAsync(new IdentityRole<Guid>("tenants"));
+                    await _roleManager.CreateAsync(new IdentityRole<Guid>(dto.Role));
                 }
-                await _userManager.AddToRoleAsync(user, "tenants");
+
+                // Gán role cho user
+                await _userManager.AddToRoleAsync(user, dto.Role);
+            
 
                 // 1. Generate token của Identity
                 var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);

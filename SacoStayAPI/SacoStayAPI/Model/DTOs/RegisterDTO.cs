@@ -11,7 +11,7 @@ namespace SacoStayAPI.Model.DTOs
         [EmailAddress(ErrorMessage = "Email không hợp lệ")]
         public string Email { get; set; }
 
-        public string ? PhoneNumber { get; set; }
+        public string  PhoneNumber { get; set; }
 
         public string? FirstName { get; set; }
         public string? LastName { get; set; }
@@ -23,5 +23,7 @@ namespace SacoStayAPI.Model.DTOs
         [Required(ErrorMessage = "Xác nhận mật khẩu là bắt buộc")]
         [Compare("Password", ErrorMessage = "Mật khẩu xác nhận không khớp")]
         public string ConfirmPassword { get; set; }
+        [Required(ErrorMessage = "Role là bắt buộc")]
+        public string Role { get; set; }
     }
 }
