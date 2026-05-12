@@ -1,0 +1,146 @@
+.auth-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.auth-container {
+  width: 100%;
+  max-width: 512px;
+  position: relative;
+  z-index: 10;
+}
+
+/* Decorative blobs */
+.auth-page::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translateX(-50%) translateY(-50%);
+  width: 24rem;
+  height: 24rem;
+  background: rgba(255, 159, 67, 0.1);
+  border-radius: 50%;
+  filter: blur(3rem);
+}
+
+.auth-page::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  transform: translateX(50%) translateY(50%);
+  width: 24rem;
+  height: 24rem;
+  background: rgba(74, 159, 217, 0.1);
+  border-radius: 50%;
+  filter: blur(3rem);
+}
+
+.tab-switcher {
+  display: flex;
+  background: white;
+  border-radius: 16px 16px 0 0;
+  overflow: hidden;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.tab-button {
+  flex: 1;
+  padding: 16px;
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  font-weight: 600;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border-bottom: 3px solid transparent;
+}
+
+.tab-button:hover {
+  background: #f9fafb;
+  color: #374151;
+}
+
+.tab-button.active {
+  color: #ff9f43;
+  background: #fff7ed;
+  border-bottom-color: #ff9f43;
+}
+
+/* Enhanced button styles */
+.btn-primary-saco {
+  background: #ff9f43;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(255, 159, 67, 0.3);
+}
+
+.btn-primary-saco:hover {
+  background: #ff8c2a;
+  box-shadow: 0 8px 30px rgba(255, 159, 67, 0.12);
+  transform: translateY(-0.25rem);
+}
+
+.btn-primary-saco:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Enhanced role buttons */
+.role-button-saco {
+  position: relative;
+  padding: 16px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: left;
+  display: flex;
+  align-items: center;
+}
+
+.role-button-saco:hover {
+  border-color: #ff9f43;
+  box-shadow: 0 8px 30px rgba(255, 159, 67, 0.12);
+  transform: translateY(-0.25rem);
+}
+
+.role-button-saco.selected {
+  border-color: #ff9f43;
+  background: #fff7ed;
+  box-shadow: 0 4px 12px rgba(255, 159, 67, 0.08);
+}
+
+
+.tab-button.active {
+  color: #ff9f43;
+  background: #fff7ed;
+  border-bottom-color: #ff9f43;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .auth-page {
+    padding: 16px;
+  }
+  
+  .tab-button {
+    padding: 14px;
+    font-size: 14px;
+  }
+}
