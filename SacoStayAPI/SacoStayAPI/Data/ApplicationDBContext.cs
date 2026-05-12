@@ -44,9 +44,21 @@ namespace SacoStayAPI.Data
             //    new IdentityRole<Guid> { Id = landlordRoleId, Name = "landlord", NormalizedName = "LANDLORD" }
             //);
             //tạo giá trị mặc định cho CreatedAt cho Account
+            //modelBuilder.Entity<Account>(entity =>
+            //{
+            //    entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+            //});
+            // tạo giá trị mặc định cho CreatedAt cho Account
             modelBuilder.Entity<Account>(entity =>
             {
-                entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                // ĐỔI GETUTCDATE() (SQL Server) thành now() (PostgreSQL)
+                entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
+            });
+
+            // Thêm đoạn này để tránh lỗi 'Amount' của PaymentTransaction luôn nhé
+            modelBuilder.Entity<PaymentTransaction>(entity =>
+            {
+                entity.Property(e => e.Amount).HasPrecision(18, 2);
             });
         }
     }

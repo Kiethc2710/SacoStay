@@ -14,7 +14,7 @@ namespace SacoStayAPI.Data
 
             var builder = new DbContextOptionsBuilder<ApplicationDBContext>();
             var connectionString = configuration.GetConnectionString("DefaultConnection");
-            builder.UseSqlServer(connectionString);
+            builder.UseNpgsql(connectionString);
 
             return new ApplicationDBContext(builder.Options);
         }
