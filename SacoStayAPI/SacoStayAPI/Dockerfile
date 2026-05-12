@@ -3,7 +3,7 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
 # Copy file project và restore các package
-COPY ["SacoStayAPI.csproj", "./"]
+COPY ["SacoStayAPI/SacoStayAPI.csproj", "SacoStayAPI/"]
 RUN dotnet restore "SacoStayAPI.csproj"
 
 # Copy toàn bộ code và build bản Release
