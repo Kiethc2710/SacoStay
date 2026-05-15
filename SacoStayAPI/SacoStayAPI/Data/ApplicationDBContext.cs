@@ -13,6 +13,9 @@ namespace SacoStayAPI.Data
         public DbSet<Account> Accounts { get; set; }
         public DbSet<ChatMessage> ChatMessages { get; set; }
         public DbSet<PaymentTransaction> PaymentTransactions { get; set; }
+        public DbSet<LifestyleQuestion> LifestyleQuestions { get; set; }
+
+        public DbSet<LifestyleOption> LifestyleOptions { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder); // đừng quên gọi base để Identity hoạt động đúng

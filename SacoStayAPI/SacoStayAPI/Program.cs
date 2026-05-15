@@ -121,6 +121,9 @@ namespace SacoStayAPI
             builder.Services.AddAuthorization();
             builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
             builder.Services.AddScoped<IPaymentService, PaymentService>();
+            builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+            builder.Services.AddScoped<ILifestyleRepository, LifestyleRepository>();
+            builder.Services.AddScoped<LifestyleService>();
             // CORS cho Angular
             builder.Services.AddCors(options =>
             {
