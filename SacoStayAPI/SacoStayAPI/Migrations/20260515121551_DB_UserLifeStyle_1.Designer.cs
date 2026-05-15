@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SacoStayAPI.Data;
@@ -11,9 +12,11 @@ using SacoStayAPI.Data;
 namespace SacoStayAPI.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    partial class ApplicationDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260515121551_DB_UserLifeStyle_1")]
+    partial class DB_UserLifeStyle_1
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -368,33 +371,6 @@ namespace SacoStayAPI.Migrations
                     b.HasIndex("LifestyleQuestionId");
 
                     b.ToTable("UserLifestyles");
-                });
-
-            modelBuilder.Entity("SacoStayAPI.Model.Entities.UserSwipe", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsLike")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("SwipedUserId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("SwiperId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("UserSwipes");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>

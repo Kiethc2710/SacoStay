@@ -11,12 +11,27 @@ namespace SacoStayAPI.Service
         {
             _unitOfWork = unitOfWork;
         }
-        //lấy tất cả câu hỏi về lối sống kèm theo các lựa chọn
-        //public async Task<IEnumerable<LifestyleQuestion>> GetAllLifestyleQuestionsAsync()
-        //{
-        //    return await _unitOfWork.LifestyleRepository.GetAllWithOptionsAsync();
-        //}
+        //1.lấy tất cả câu hỏi về lối sống kèm theo các lựa chọn
+        public async Task<IEnumerable<LifestyleQuestionDTO>> GetAllQuestionsWithOptionsAsync()
+        {
+            var questions = await _unitOfWork.LifestyleRepository.GetAllWithOptionsAsync();
+            // dùng LINQ để chuyển đổi danh sách Entity sang danh sách DTO
 
+            // Chuyển Entity sang DTO để ngắt hoàn toàn liên kết ngược
+            var questionDtos = questions.Select(q => new LifestyleQuestionDTO
+            {
+                Id = q.Id,
+                Content = q.Content,
+                Options = q.Options.Select(o => new LifestyleOptionDTO
+                {
+                    Id = o.Id,
+                    Content = o.Content
+                }).ToList()
+            });
+
+            return questionDtos;
+        }
+        //2.Tạo câu hỏi mới kèm theo các lựa chọn
         public async Task CreateQuestionWithOptionsAsync(CreateQuestionDTO dto)
         {
             // Khởi tạo Entity LifestyleQuestion
@@ -35,6 +50,179 @@ namespace SacoStayAPI.Service
             await _unitOfWork.Repository<LifestyleQuestion>().AddAsync(newQuestion);
 
             // Commit thay đổi xuống Database
+            await _unitOfWork.CompleteAsync();
+        }
+
+        //3.USER: LƯU CÂU TRẢ LỜI CỦA MÌNH
+        public async Task SubmitUserAnswersAsync(string userId, UserSubmitLifestyleDTO dto)
+        {
+            // 1. Loại bỏ các ID trùng lặp (phòng hờ Frontend gửi mảng lỗi kiểu [1, 1, 2])
+            var uniqueOptionIds = dto.SelectedOptionIds.Distinct().ToList();
+
+            // 2. Tìm options trong Database
+            var selectedOptions = (await _unitOfWork.Repository<LifestyleOption>()
+                .FindAsync(o => uniqueOptionIds.Contains(o.Id))).ToList();
+
+            // 3. KIỂM TRA ĐIỀU KIỆN 1: OptionId phải tồn tại
+            if (selectedOptions.Count != uniqueOptionIds.Count)
+            {
+                var foundIds = selectedOptions.Select(o => o.Id).ToList();
+                var invalidIds = uniqueOptionIds.Except(foundIds).ToList();
+                throw new ArgumentException($"Các OptionId sau không tồn tại: {string.Join(", ", invalidIds)}");
+            }
+
+            // ================== THÊM LOGIC KIỂM TRA SỐ LƯỢNG CÂU HỎI ==================
+
+            // Lấy tổng số lượng câu hỏi đang có trong hệ thống
+            var allQuestions = await _unitOfWork.Repository<LifestyleQuestion>().GetAllAsync();
+            int totalQuestionsInDb = allQuestions.Count();
+
+            // Lấy ra danh sách các ID câu hỏi mà User vừa trả lời (dùng Distinct để loại bỏ trùng lặp 
+            // phòng trường hợp user chọn 2 đáp án cho cùng 1 câu hỏi)
+            int answeredQuestionsCount = selectedOptions.Select(o => o.LifestyleQuestionId).Distinct().Count();
+
+            // KIỂM TRA ĐIỀU KIỆN 2: Số câu trả lời phải bằng tổng số câu hỏi
+            if (answeredQuestionsCount < totalQuestionsInDb)
+            {
+                throw new ArgumentException($"Vui lòng trả lời đầy đủ tất cả các câu hỏi. Hệ thống có {totalQuestionsInDb} câu, nhưng bạn mới trả lời {answeredQuestionsCount} câu.");
+            }
+
+            // KIỂM TRA ĐIỀU KIỆN 3 (Tùy chọn): Tránh trường hợp cố tình chọn 2 đáp án cho 1 câu hỏi
+            if (uniqueOptionIds.Count > totalQuestionsInDb)
+            {
+                throw new ArgumentException("Số lượng đáp án vượt quá tổng số câu hỏi. Mỗi câu hỏi chỉ được chọn 1 đáp án.");
+            }
+
+            // ===========================================================================
+
+            // 4. Xóa các câu trả lời cũ
+            var oldAnswers = await _unitOfWork.Repository<UserLifestyle>()
+                .FindAsync(u => u.UserId == userId);
+
+            foreach (var old in oldAnswers)
+            {
+                _unitOfWork.Repository<UserLifestyle>().Remove(old);
+            }
+
+            // 5. Thêm các câu trả lời mới
+            foreach (var option in selectedOptions)
+            {
+                var newAnswer = new UserLifestyle
+                {
+                    UserId = userId,
+                    LifestyleOptionId = option.Id,
+                    LifestyleQuestionId = option.LifestyleQuestionId
+                };
+                await _unitOfWork.Repository<UserLifestyle>().AddAsync(newAnswer);
+            }
+
+            await _unitOfWork.CompleteAsync();
+        }
+        //4. Tính % phù hợp giữa 2 người dựa trên câu trả lời của họ (để gợi ý phòng ở phù hợp)
+        public async Task<MatchingResultDTO> CalculateMatchingScoreAsync(string UserId, string targetUserId)
+        {
+            // Lấy toàn bộ câu trả lời của 2 user
+            var answersA = await _unitOfWork.Repository<UserLifestyle>()
+                .FindAsync(u => u.UserId == UserId);
+
+            var answersB = await _unitOfWork.Repository<UserLifestyle>()
+                .FindAsync(u => u.UserId == targetUserId);
+
+            // Mặc dù UI đã chặn, Backend vẫn nên có 1 dòng check null phòng hờ dùng Postman gọi thẳng
+            if (!answersA.Any() || !answersB.Any())
+            {
+                return new MatchingResultDTO
+                {
+                    TargetUserId = targetUserId,
+                    MatchingScore = 0,
+                    TotalQuestions = 0,
+                    MatchedAnswers = 0
+                };
+            }
+
+            //Lấy luôn tổng số câu hỏi dựa trên số đáp án (vì UI ép trả lời đủ)
+            int totalQuestions = answersA.Count();
+
+            //Đếm số đáp án giống hệt nhau (Phép giao Intersect)
+            var optionsA = answersA.Select(x => x.LifestyleOptionId);
+            var optionsB = answersB.Select(x => x.LifestyleOptionId);
+
+            int matchedAnswersCount = optionsA.Intersect(optionsB).Count();
+
+            //Tính toán phần trăm (Chỉ 1 phép tính đơn giản)
+            int score = (int)Math.Round((double)matchedAnswersCount / totalQuestions * 100);
+
+            return new MatchingResultDTO
+            {
+                TargetUserId = targetUserId,
+                MatchingScore = score,
+                TotalQuestions = totalQuestions,
+                MatchedAnswers = matchedAnswersCount
+            };
+        }
+        //gợi í danh sach những người phù hợp nhất dựa trên câu trả lời của họ (để gợi ý phòng ở phù hợp)
+        public async Task<List<SwipeCardDTO>> GetSwipeDeckAsync(string currentUserId, int limit)
+        {
+            // 1. Lấy đáp án của current user
+            var currentUserAnswers = await _unitOfWork.Repository<UserLifestyle>()
+                .FindAsync(u => u.UserId == currentUserId);
+
+            var myOptionIds = currentUserAnswers.Select(x => x.LifestyleOptionId).ToList();
+            int totalQuestions = myOptionIds.Count;
+
+            // Nếu user chưa làm bài test, trả về list rỗng
+            if (totalQuestions == 0) return new List<SwipeCardDTO>();
+
+            // 2. Lấy danh sách ID những người user này ĐÃ QUẸT
+            var swipedHistory = await _unitOfWork.Repository<UserSwipe>()
+                .FindAsync(s => s.SwiperId == currentUserId);
+            var swipedIds = swipedHistory.Select(s => s.SwipedUserId).ToList();
+
+            // 3. Lấy đáp án của TẤT CẢ những người khác (Trừ bản thân và những người đã quẹt)
+            var allOtherAnswers = await _unitOfWork.Repository<UserLifestyle>()
+                .FindAsync(u => u.UserId != currentUserId && !swipedIds.Contains(u.UserId));
+
+            // 4. Gom nhóm đáp án theo từng UserId
+            var groupedAnswers = allOtherAnswers.GroupBy(u => u.UserId);
+
+            var deck = new List<SwipeCardDTO>();
+
+            // 5. Tính điểm hàng loạt
+            foreach (var group in groupedAnswers)
+            {
+                var theirOptionIds = group.Select(x => x.LifestyleOptionId).ToList();
+
+                // Dùng phép giao (Intersect) để đếm số đáp án giống nhau
+                int matchedCount = myOptionIds.Intersect(theirOptionIds).Count();
+
+                int score = (int)Math.Round((double)matchedCount / totalQuestions * 100);
+
+                deck.Add(new SwipeCardDTO
+                {
+                    UserId = group.Key,
+                    MatchingScore = score
+                });
+            }
+
+            // 6. Xào bài: Lấy những người hợp trên 50%, trộn ngẫu nhiên (hoặc sắp xếp cao xuống thấp), rồi cắt đúng 10 thẻ
+            return deck
+                .Where(d => d.MatchingScore >= 50) // Có thể bỏ dòng này nếu muốn hiện cả người không hợp
+                .OrderByDescending(d => d.MatchingScore) // Ưu tiên người hợp nhất đưa lên trên
+                                                         // .OrderBy(x => Guid.NewGuid()) // Nếu muốn xào trộn ngẫu nhiên thì mở comment dòng này
+                .Take(limit)
+                .ToList();
+        }
+
+        public async Task SaveSwipeActionAsync(string currentUserId, string targetUserId, bool isLike)
+        {
+            var newSwipe = new UserSwipe
+            {
+                SwiperId = currentUserId,
+                SwipedUserId = targetUserId,
+                IsLike = isLike
+            };
+
+            await _unitOfWork.Repository<UserSwipe>().AddAsync(newSwipe);
             await _unitOfWork.CompleteAsync();
         }
     }

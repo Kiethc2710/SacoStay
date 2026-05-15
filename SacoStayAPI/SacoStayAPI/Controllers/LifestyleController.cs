@@ -1,7 +1,11 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using SacoStayAPI.Model.DTOs;
 using SacoStayAPI.Service;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 
 namespace SacoStayAPI.Controllers
 {
@@ -41,5 +45,141 @@ namespace SacoStayAPI.Controllers
                 return StatusCode(500, $"Lỗi hệ thống: {ex.Message}");
             }
         }
-    }
+        [HttpGet("questions")]
+        public async Task<IActionResult> GetAllQuestions()
+        {
+            try
+            {
+                var questions = await _lifestyleService.GetAllQuestionsWithOptionsAsync();
+                return Ok(questions);
+            }
+            catch (Exception ex)
+            {
+                // Trong thực tế nên log lỗi này lại
+                return StatusCode(500, $"Lỗi hệ thống: {ex.Message}");
+            }
+        }
+        [Authorize(AuthenticationSchemes = "Bearer")] 
+        [HttpPost("submit")]
+        public async Task<IActionResult> SubmitAnswers([FromBody] UserSubmitLifestyleDTO dto)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                        ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized("Token không hợp lệ.");
+
+            if (dto.SelectedOptionIds == null || !dto.SelectedOptionIds.Any())
+                return BadRequest("Vui lòng chọn ít nhất 1 câu trả lời.");
+
+            await _lifestyleService.SubmitUserAnswersAsync(userId, dto);
+            return Ok(new { message = $"Lưu hồ sơ lối sống {userId} thành công! " });
+        }
+
+        [Authorize(AuthenticationSchemes = "Bearer")]
+        [HttpGet("match/{targetUserId}")]
+        public async Task<IActionResult> GetMatchingScore(string targetUserId)
+        {
+            // 1. Lấy ID của user đang đăng nhập từ Bearer Token
+            var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                             ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+
+            if (string.IsNullOrEmpty(currentUserId))
+            {
+                return Unauthorized("Token không hợp lệ hoặc không chứa thông tin User.");
+            }
+
+            // 2. Chặn trường hợp user "tự kỷ" - tự truyền ID của chính mình vào để so sánh
+            if (currentUserId == targetUserId)
+            {
+                return BadRequest("Không thể tự tính điểm tương hợp với chính mình.");
+            }
+
+            try
+            {
+                // 3. Gọi Service để tính toán
+                var result = await _lifestyleService.CalculateMatchingScoreAsync(currentUserId, targetUserId);
+
+                // 4. Trả kết quả thành công (HTTP 200) về cho Frontend
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                // Bắt lỗi hệ thống
+                return StatusCode(500, $"Lỗi hệ thống: {ex.Message}");
+            }
+        }
+
+        [Authorize(AuthenticationSchemes = "Bearer")]
+        [HttpGet("swipe-deck")]
+        public async Task<IActionResult> GetSwipeDeck([FromQuery] int limit = 10)
+        {
+            var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                             ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+
+            if (string.IsNullOrEmpty(currentUserId))
+                return Unauthorized("Token không hợp lệ.");
+
+            try
+            {
+                // =================================================================
+                // BƯỚC BẢO MẬT: KIỂM TRA LIMIT CÓ HỢP LỆ VỚI GÓI ĐÃ MUA KHÔNG
+                // =================================================================
+
+                // Giả sử bạn có 1 hàm trong Service hoặc DB để check gói của User
+                // var userPlan = await _userService.GetUserPlanAsync(currentUserId);
+
+                int maxAllowedLimit = 20; // Mặc định ai cũng là gói Free (10 thẻ)
+
+                /* Mở comment đoạn này khi bạn có bảng lưu Gói User
+                if (userPlan == "VIP") 
+                {
+                    maxAllowedLimit = 50; 
+                }
+                else if (userPlan == "SVIP") 
+                {
+                    maxAllowedLimit = 100; 
+                }
+                */
+
+                // Nếu Frontend truyền limit lớn hơn số thẻ tối đa của gói nó mua
+                // -> Ép cái limit đó về đúng số thẻ tối đa của gói đó
+                if (limit > maxAllowedLimit)
+                {
+                    limit = maxAllowedLimit;
+                }
+
+                // =================================================================
+
+                // Trả cái limit (đã được kiểm duyệt sạch sẽ) xuống cho Service
+                var deck = await _lifestyleService.GetSwipeDeckAsync(currentUserId, limit);
+                return Ok(deck);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Lỗi hệ thống: {ex.Message}");
+            }
+        }
+        // API 2: LƯU HÀNH ĐỘNG QUẸT (Trái/Phải)
+        [Authorize(AuthenticationSchemes = "Bearer")]
+        [HttpPost("swipe")]
+        public async Task<IActionResult> SwipeUser([FromQuery] string targetUserId, [FromQuery] bool isLike)
+        {
+            var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                             ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+
+            if (string.IsNullOrEmpty(currentUserId)) return Unauthorized("Token không hợp lệ.");
+            if (string.IsNullOrEmpty(targetUserId)) return BadRequest("Thiếu ID người dùng.");
+
+            try
+            {
+                await _lifestyleService.SaveSwipeActionAsync(currentUserId, targetUserId, isLike);
+                return Ok(new { message = isLike ? "Đã quẹt PHẢI (Like)" : "Đã quẹt TRÁI (Pass)" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Lỗi hệ thống: {ex.Message}");
+            }
+        }
+    } 
 }
