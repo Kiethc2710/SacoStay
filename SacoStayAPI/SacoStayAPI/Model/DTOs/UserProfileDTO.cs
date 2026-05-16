@@ -11,6 +11,7 @@
         public string? Job { get; set; }
         public string? LivingArea { get; set; }
         public string? Bio { get; set; }
+        public IFormFile? AvatarFile { get; set; }
 
     }
 }

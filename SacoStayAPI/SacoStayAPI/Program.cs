@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -10,6 +10,7 @@ using SacoStayAPI.Service;
 using SacoStayAPI.Services;
 using System.IdentityModel.Tokens.Jwt;
 using System.Text;
+using Amazon.S3; 
 
 namespace SacoStayAPI
 {
@@ -25,10 +26,24 @@ namespace SacoStayAPI
             builder.Services.AddSignalR();
             builder.Services.AddMemoryCache();
 
-            // Dependency Injection
+            // ---- AWS S3 Configuration ----
+            var awsOptions = builder.Configuration.GetAWSOptions();
+            awsOptions.Credentials = new Amazon.Runtime.BasicAWSCredentials(
+                builder.Configuration["AWS:AccessKey"],
+                builder.Configuration["AWS:SecretKey"]
+            );
+            builder.Services.AddDefaultAWSOptions(awsOptions);
+            builder.Services.AddAWSService<IAmazonS3>();
+            // ---- Dependency Injection ----
+            builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
             builder.Services.AddScoped<EmailService>();
+            builder.Services.AddScoped<IPhotoService, PhotoService>();
+
             builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
             builder.Services.AddScoped<IPaymentService, PaymentService>();
+
+            builder.Services.AddScoped<ILifestyleRepository, LifestyleRepository>();
+            builder.Services.AddScoped<LifestyleService>();
 
             // Swagger + Bearer
             builder.Services.AddSwaggerGen(c =>
@@ -62,7 +77,7 @@ namespace SacoStayAPI
             builder.Services.AddIdentity<Account, IdentityRole<Guid>>(options =>
             {
                 options.User.RequireUniqueEmail = true;
-                options.Password.RequireDigit = false; // T�y ch?nh ?? kh� m?t kh?u n?u c?n
+                options.Password.RequireDigit = false;
                 options.Password.RequiredLength = 6;
                 options.Password.RequireNonAlphanumeric = false;
                 options.Password.RequireUppercase = false;
@@ -89,7 +104,7 @@ namespace SacoStayAPI
                         ClockSkew = TimeSpan.Zero
                     };
 
-                    // C?u h�nh cho SignalR nh?n Token t? Query String
+                    // Cấu hình cho SignalR nhận Token từ Query String
                     options.Events = new JwtBearerEvents
                     {
                         OnMessageReceived = context =>
@@ -106,21 +121,16 @@ namespace SacoStayAPI
                 });
 
             builder.Services.AddAuthorization();
-            builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
-            builder.Services.AddScoped<IPaymentService, PaymentService>();
-            builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
-            builder.Services.AddScoped<ILifestyleRepository, LifestyleRepository>();
-            builder.Services.AddScoped<LifestyleService>();
-            // CORS cho Angular
 
+            // CORS cho Angular
             builder.Services.AddCors(options =>
             {
                 options.AddPolicy("AllowAll", policy =>
                 {
                     policy.AllowAnyHeader()
                           .AllowAnyMethod()
-                          .SetIsOriginAllowed(_ => true) 
-                          .AllowCredentials(); 
+                          .SetIsOriginAllowed(_ => true)
+                          .AllowCredentials();
                 });
             });
 
@@ -134,8 +144,6 @@ namespace SacoStayAPI
                 await SeedData.InitializeAsync(scope.ServiceProvider);
             }
 
-            // ================= 3. MIDDLEWARE PIPELINE =================
-
             if (app.Environment.IsDevelopment())
             {
                 app.UseSwagger();
@@ -144,7 +152,7 @@ namespace SacoStayAPI
 
             app.UseHttpsRedirection();
 
-            // S? d?ng CORS tr??c Routing/Auth
+            // Sử dụng CORS trước Routing/Auth
             app.UseCors("AllowAll");
 
             app.UseRouting();
