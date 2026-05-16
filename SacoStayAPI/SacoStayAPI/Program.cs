@@ -10,7 +10,7 @@ using SacoStayAPI.Service;
 using SacoStayAPI.Services;
 using System.IdentityModel.Tokens.Jwt;
 using System.Text;
-using Amazon.S3; 
+using Amazon.S3;
 
 namespace SacoStayAPI
 {
@@ -26,7 +26,7 @@ namespace SacoStayAPI
             builder.Services.AddSignalR();
             builder.Services.AddMemoryCache();
 
-            // ---- AWS S3 Configuration ----
+            // ---- AWS S3 Configuration (Đã sửa lỗi nạp đè credentials) ----
             var awsOptions = builder.Configuration.GetAWSOptions();
             awsOptions.Credentials = new Amazon.Runtime.BasicAWSCredentials(
                 builder.Configuration["AWS:AccessKey"],
@@ -34,6 +34,7 @@ namespace SacoStayAPI
             );
             builder.Services.AddDefaultAWSOptions(awsOptions);
             builder.Services.AddAWSService<IAmazonS3>();
+
             // ---- Dependency Injection ----
             builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
             builder.Services.AddScoped<EmailService>();
@@ -45,17 +46,18 @@ namespace SacoStayAPI
             builder.Services.AddScoped<ILifestyleRepository, LifestyleRepository>();
             builder.Services.AddScoped<LifestyleService>();
 
-            // Swagger + Bearer
+            // Swagger + Bearer 
             builder.Services.AddSwaggerGen(c =>
             {
                 c.SwaggerDoc("v1", new OpenApiInfo { Title = "SacoStay API", Version = "v1" });
                 c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
                 {
-                    Description = "Enter 'Bearer' [space] and then your token",
+                    Description = "Chỉ cần dán trực tiếp JWT Token của bạn vào ô dưới đây (Không cần gõ chữ Bearer)",
                     Name = "Authorization",
                     In = ParameterLocation.Header,
-                    Type = SecuritySchemeType.ApiKey,
-                    Scheme = "Bearer"
+                    Type = SecuritySchemeType.Http, 
+                    Scheme = "bearer",
+                    BearerFormat = "JWT"
                 });
                 c.AddSecurityRequirement(new OpenApiSecurityRequirement
                 {
