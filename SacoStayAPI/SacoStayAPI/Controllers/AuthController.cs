@@ -382,7 +382,7 @@ namespace SacoStayAPI.Controllers
             if (!string.IsNullOrEmpty(dto.LastName)) user.LastName = dto.LastName;
             if (!string.IsNullOrEmpty(dto.PhoneNumber)) user.PhoneNumber = dto.PhoneNumber;
             if (!string.IsNullOrEmpty(dto.Job)) user.Job = dto.Job;
-            if (!string.IsNullOrEmpty(dto.LivingArea)) user.LivingArea = dto.LivingArea;
+
             if (!string.IsNullOrEmpty(dto.Bio)) user.Bio = dto.Bio;
 
             if (dto.Gender.HasValue) user.Gender = dto.Gender.Value;
