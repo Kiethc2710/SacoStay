@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SacoStayAPI.Data;
@@ -11,9 +12,11 @@ using SacoStayAPI.Data;
 namespace SacoStayAPI.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    partial class ApplicationDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260515121203_DB_UserLifeStyle")]
+    partial class DB_UserLifeStyle
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -343,60 +346,6 @@ namespace SacoStayAPI.Migrations
                     b.ToTable("PaymentTransactions");
                 });
 
-            modelBuilder.Entity("SacoStayAPI.Model.Entities.UserLifestyle", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("LifestyleOptionId")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("LifestyleQuestionId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LifestyleOptionId");
-
-                    b.HasIndex("LifestyleQuestionId");
-
-                    b.ToTable("UserLifestyles");
-                });
-
-            modelBuilder.Entity("SacoStayAPI.Model.Entities.UserSwipe", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsLike")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("SwipedUserId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("SwiperId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("UserSwipes");
-                });
-
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole<System.Guid>", null)
@@ -466,25 +415,6 @@ namespace SacoStayAPI.Migrations
                         .HasForeignKey("LifestyleQuestionId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("LifestyleQuestion");
-                });
-
-            modelBuilder.Entity("SacoStayAPI.Model.Entities.UserLifestyle", b =>
-                {
-                    b.HasOne("SacoStayAPI.Model.Entities.LifestyleOption", "LifestyleOption")
-                        .WithMany()
-                        .HasForeignKey("LifestyleOptionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("SacoStayAPI.Model.Entities.LifestyleQuestion", "LifestyleQuestion")
-                        .WithMany()
-                        .HasForeignKey("LifestyleQuestionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("LifestyleOption");
 
                     b.Navigation("LifestyleQuestion");
                 });
