@@ -1,6 +1,9 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using SacoStayAPI.Service;
+using System;
+using System.Threading.Tasks;
 
 namespace SacoStayAPI.Controllers
 {
@@ -15,18 +18,29 @@ namespace SacoStayAPI.Controllers
             _service = service;
         }
 
-        [HttpPost("create-payment")]
-        public async Task<IActionResult> CreatePayment(decimal amount)
+        [Authorize(AuthenticationSchemes = "Bearer")]
+        [HttpPost("buy-package")]
+        public async Task<IActionResult> BuyPackage([FromQuery] Guid roomPostId, [FromQuery] string packageName)
         {
-            var url = await _service.CreatePayment(amount);
-            return Ok(url);
+            try
+            {
+                // Gọi dịch vụ tính tiền theo gói và sinh link VNPay theo thuật toán cũ
+                var url = await _service.CreatePackagePaymentUrlAsync(roomPostId, packageName);
+                return Ok(new { paymentUrl = url });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
         [HttpGet("vnpay-return")]
         public async Task<IActionResult> VnPayReturn()
         {
             await _service.HandleReturnAsync(Request.Query);
-            return Ok("Payment processed");
+
+            // Điều hướng về giao diện Frontend sau khi thanh toán xong
+            return Redirect("http://localhost:4200/owner/my-posts?payment=completed");
         }
     }
 }

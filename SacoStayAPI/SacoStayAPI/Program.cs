@@ -45,7 +45,8 @@ namespace SacoStayAPI
 
             builder.Services.AddScoped<ILifestyleRepository, LifestyleRepository>();
             builder.Services.AddScoped<LifestyleService>();
-
+             
+            builder.Services.AddScoped<IRoomPostService, RoomPostService>();
             // Swagger + Bearer 
             builder.Services.AddSwaggerGen(c =>
             {

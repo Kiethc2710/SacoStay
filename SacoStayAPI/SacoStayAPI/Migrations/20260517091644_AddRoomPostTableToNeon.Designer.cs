@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SacoStayAPI.Data;
@@ -12,9 +13,11 @@ using SacoStayAPI.Data;
 namespace SacoStayAPI.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    partial class ApplicationDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260517091644_AddRoomPostTableToNeon")]
+    partial class AddRoomPostTableToNeon
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -331,15 +334,9 @@ namespace SacoStayAPI.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("PackageName")
-                        .HasColumnType("text");
-
                     b.Property<string>("PaymentMethod")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<Guid?>("RoomPostId")
-                        .HasColumnType("uuid");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -398,13 +395,6 @@ namespace SacoStayAPI.Migrations
                     b.Property<int>("MaxPeople")
                         .HasColumnType("integer");
 
-                    b.Property<DateTime?>("PackageExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("PackageTier")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<decimal>("Price")
                         .HasColumnType("numeric");
 
@@ -422,30 +412,6 @@ namespace SacoStayAPI.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("RoomPosts");
-                });
-
-            modelBuilder.Entity("SacoStayAPI.Model.Entities.RoomViewHistory", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("RoomPostId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("ViewedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RoomPostId");
-
-                    b.HasIndex("TenantId");
-
-                    b.ToTable("RoomViewHistories");
                 });
 
             modelBuilder.Entity("SacoStayAPI.Model.Entities.UserLifestyle", b =>
@@ -573,25 +539,6 @@ namespace SacoStayAPI.Migrations
                         .IsRequired();
 
                     b.Navigation("LifestyleQuestion");
-                });
-
-            modelBuilder.Entity("SacoStayAPI.Model.Entities.RoomViewHistory", b =>
-                {
-                    b.HasOne("SacoStayAPI.Model.Entities.RoomPost", "RoomPost")
-                        .WithMany()
-                        .HasForeignKey("RoomPostId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("SacoStayAPI.Model.Entities.Account", "Tenant")
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("RoomPost");
-
-                    b.Navigation("Tenant");
                 });
 
             modelBuilder.Entity("SacoStayAPI.Model.Entities.UserLifestyle", b =>
