@@ -269,7 +269,6 @@ namespace SacoStayAPI.Controllers
             // Khởi tạo mảng nếu bị null
             if (user.ProfileImages == null) user.ProfileImages = new List<string>();
 
-            // Kiểm tra giới hạn tối đa 5 ảnh
             if (user.ProfileImages.Count + files.Count > 5)
             {
                 return BadRequest($"Bạn chỉ có thể thêm tối đa 5 ảnh. Hiện tại bạn đã có {user.ProfileImages.Count} ảnh.");
@@ -321,6 +320,61 @@ namespace SacoStayAPI.Controllers
             if (result.Succeeded)
             {
                 return Ok(new { message = "Xóa ảnh thành công", profileImages = user.ProfileImages });
+            }
+
+            return BadRequest(result.Errors);
+        }
+        [Authorize(AuthenticationSchemes = "Bearer")]
+        [HttpPut("update-profile")]
+        public async Task<IActionResult> UpdateProfile([FromForm] UserProfileDTO dto)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null) return NotFound("Người dùng không tồn tại");
+
+            if (dto.AvatarFile != null && dto.AvatarFile.Length > 0)
+            {
+                try
+                {
+                    var avatarUrl = await _photoService.UploadPhotoAsync(dto.AvatarFile, "users/avatars");
+
+                    if (user.ProfileImages == null) user.ProfileImages = new List<string>();
+
+                    user.ProfileImages.Clear(); // Xóa avatar cũ, chỉ giữ lại 1 ảnh duy nhất làm diện mạo mới
+                    user.ProfileImages.Add(avatarUrl);
+                }
+                catch (Exception)
+                {
+                    return StatusCode(500, "Lỗi hệ thống khi tải ảnh đại diện lên đám mây S3.");
+                }
+            }
+            if (!string.IsNullOrEmpty(dto.FirstName)) user.FirstName = dto.FirstName;
+            if (!string.IsNullOrEmpty(dto.LastName)) user.LastName = dto.LastName;
+            if (!string.IsNullOrEmpty(dto.PhoneNumber)) user.PhoneNumber = dto.PhoneNumber;
+            if (!string.IsNullOrEmpty(dto.Job)) user.Job = dto.Job;
+            if (!string.IsNullOrEmpty(dto.LivingArea)) user.LivingArea = dto.LivingArea;
+            if (!string.IsNullOrEmpty(dto.Bio)) user.Bio = dto.Bio;
+
+            if (dto.Gender.HasValue)
+            {
+                user.Gender = dto.Gender.Value;
+            }
+
+            if (dto.DateOfBirth.HasValue)
+            {
+                user.DateOfBirth = dto.DateOfBirth.Value;
+            }
+            var result = await _userManager.UpdateAsync(user);
+            if (result.Succeeded)
+            {
+                return Ok(new
+                {
+                    message = "Cập nhật hồ sơ thành công!",
+                    profileImages = user.ProfileImages,
+                    dateOfBirth = user.DateOfBirth.ToString("yyyy-MM-dd") 
+                });
             }
 
             return BadRequest(result.Errors);
