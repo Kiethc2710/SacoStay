@@ -225,5 +225,56 @@ namespace SacoStayAPI.Service
             await _unitOfWork.Repository<UserSwipe>().AddAsync(newSwipe);
             await _unitOfWork.CompleteAsync();
         }
+        public async Task<LifestyleQuestion> UpdateQuestionOnlyAsync(UpdateQuestionDTO dto)
+        {
+            var question = await _unitOfWork.Repository<LifestyleQuestion>().GetByIdAsync(dto.Id);
+            if (question == null) throw new KeyNotFoundException("Câu hỏi không tồn tại.");
+
+            // Chỉ cập nhật nội dung câu hỏi
+            question.Content = dto.Content;
+
+            await _unitOfWork.CompleteAsync();
+
+            return question;
+        }
+        public async Task UpdateQuestionOptionsAsync(int questionId, List<UpdateOptionDTO> incomingOptions)
+        {
+            // Kiểm tra xem câu hỏi có tồn tại không (Tùy chọn, để đảm bảo data chuẩn)
+            var questionExists = await _unitOfWork.Repository<LifestyleQuestion>().GetByIdAsync(questionId) != null;
+            if (!questionExists) throw new KeyNotFoundException("Câu hỏi không tồn tại.");
+
+            // Lấy các câu trả lời đang có sẵn của câu hỏi này trong DB
+            var existingOptionsList = (await _unitOfWork.Repository<LifestyleOption>()
+                .FindAsync(o => o.LifestyleQuestionId == questionId)).ToList();
+
+            // Duyệt qua list câu trả lời Frontend gửi lên
+            foreach (var incomingOption in incomingOptions)
+            {
+                // TRƯỜNG HỢP A: Đổi nội dung câu trả lời cũ (Có Id)
+                if (incomingOption.OptionId.HasValue && incomingOption.OptionId.Value > 0)
+                {
+                    var existing = existingOptionsList.FirstOrDefault(o => o.Id == incomingOption.OptionId.Value);
+                    if (existing != null)
+                    {
+                        existing.Content = incomingOption.Content; // Ghi đè nội dung mới
+                    }
+                }
+                // TRƯỜNG HỢP B: Thêm câu trả lời mới (Không có Id)
+                else
+                {
+                    var newOption = new LifestyleOption
+                    {
+                        Content = incomingOption.Content,
+                        LifestyleQuestionId = questionId
+                    };
+
+                    // Giả sử Repository của bạn có hàm Add()
+                    _unitOfWork.Repository<LifestyleOption>().AddAsync(newOption);
+                }
+            }
+
+            // Lưu toàn bộ thay đổi của Options xuống Database
+            await _unitOfWork.CompleteAsync();
+        }
     }
 }

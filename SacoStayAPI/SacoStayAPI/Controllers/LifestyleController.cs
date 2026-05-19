@@ -181,5 +181,75 @@ namespace SacoStayAPI.Controllers
                 return StatusCode(500, $"Lỗi hệ thống: {ex.Message}");
             }
         }
+
+        /// <summary>
+        /// API 1: Chỉ cập nhật nội dung câu hỏi
+        /// URL: PUT /api/lifestylequestions/content
+        /// </summary>
+        [HttpPut("question")]
+        public async Task<IActionResult> UpdateQuestionOnly([FromBody] UpdateQuestionDTO dto)
+        {
+            // 1. Validate dữ liệu đầu vào
+            if (dto == null)
+                return BadRequest(new { message = "Dữ liệu không hợp lệ." });
+
+            if (dto.Id == null || dto.Id <= 0)
+                return BadRequest(new { message = "Vui lòng cung cấp Id câu hỏi hợp lệ." });
+
+            if (string.IsNullOrWhiteSpace(dto.Content))
+                return BadRequest(new { message = "Nội dung câu hỏi không được để trống." });
+
+            try
+            {
+                // 2. Gọi Service
+                var updatedQuestion = await _lifestyleService.UpdateQuestionOnlyAsync(dto);
+                return Ok(new
+                {
+                    message = "Cập nhật câu hỏi thành công!",
+                    data = updatedQuestion
+                });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (System.Exception ex)
+            {
+                // Có thể ghi log lỗi ở đây
+                return StatusCode(500, new { message = "Lỗi máy chủ: " + ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// API 2: Cập nhật và thêm mới danh sách Câu trả lời (Options)
+        /// URL: PUT /api/lifestylequestions/{id}/options
+        /// </summary>
+        [HttpPut("options")]
+        public async Task<IActionResult> UpdateQuestionOptions(int questionId, [FromBody] List<UpdateOptionDTO> incomingOptions)
+        {
+            // 1. Validate dữ liệu đầu vào
+            if (questionId <= 0)
+                return BadRequest(new { message = "Id câu hỏi không hợp lệ." });
+
+            if (incomingOptions == null || incomingOptions.Count == 0)
+                return BadRequest(new { message = "Danh sách câu trả lời không được để trống." });
+
+            try
+            {
+                // 2. Gọi Service
+                await _lifestyleService.UpdateQuestionOptionsAsync( questionId, incomingOptions);
+                return Ok(new { message = "Cập nhật danh sách câu trả lời thành công!" });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (System.Exception ex)
+            {
+                // Có thể ghi log lỗi ở đây
+                return StatusCode(500, new { message = "Lỗi máy chủ: " + ex.Message });
+            }
+        }
+
     } 
 }
