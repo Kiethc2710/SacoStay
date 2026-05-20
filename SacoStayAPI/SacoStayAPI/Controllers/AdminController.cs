@@ -9,7 +9,6 @@ namespace SacoStayAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize(Roles = "admin")]
     public class AdminController : ControllerBase
     {
         private readonly UserManager<Account> _userManager;
@@ -21,6 +20,7 @@ namespace SacoStayAPI.Controllers
             _unitOfWork = unitOfWork;
         }
 
+        [Authorize(AuthenticationSchemes = "Bearer", Roles = "admin")]
         [HttpGet("dashboard")]
         public async Task<IActionResult> GetDashboard()
         {
@@ -38,6 +38,7 @@ namespace SacoStayAPI.Controllers
             });
         }
 
+        [Authorize(AuthenticationSchemes = "Bearer", Roles = "admin")]
         [HttpGet("users")]
         public async Task<IActionResult> GetUsers([FromQuery] int limit = 100)
         {
@@ -69,6 +70,7 @@ namespace SacoStayAPI.Controllers
             return Ok(result);
         }
 
+        [Authorize(AuthenticationSchemes = "Bearer", Roles = "admin")]
         [HttpGet("room-posts")]
         public async Task<IActionResult> GetRoomPosts([FromQuery] string? status)
         {
@@ -109,6 +111,7 @@ namespace SacoStayAPI.Controllers
             return Ok(result);
         }
 
+        [Authorize(AuthenticationSchemes = "Bearer", Roles = "admin")]
         [HttpPost("room-posts/{id}/approve")]
         public async Task<IActionResult> ApproveRoomPost(Guid id)
         {
@@ -127,6 +130,7 @@ namespace SacoStayAPI.Controllers
             return Ok(new { message = "Đã duyệt tin đăng. Tin hiển thị công khai.", status = post.Status });
         }
 
+        [Authorize(AuthenticationSchemes = "Bearer", Roles = "admin")]
         [HttpPost("room-posts/{id}/reject")]
         public async Task<IActionResult> RejectRoomPost(Guid id)
         {

@@ -93,6 +93,8 @@ namespace SacoStayAPI
             builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(options =>
                 {
+                    // Giữ claim "role" từ JWT (tránh map sang URI dài khiến [Authorize(Roles = "admin")] 403).
+                    options.MapInboundClaims = false;
                     options.TokenValidationParameters = new TokenValidationParameters
                     {
                         ValidateIssuer = true,
