@@ -39,6 +39,7 @@ namespace SacoStayAPI.Service
 
             using var newStream = new MemoryStream();
             await file.CopyToAsync(newStream);
+            newStream.Position = 0;
 
             var uploadRequest = new TransferUtilityUploadRequest
             {
