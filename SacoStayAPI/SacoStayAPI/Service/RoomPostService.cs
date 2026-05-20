@@ -121,11 +121,12 @@ namespace SacoStayAPI.Service
                 .OrderBy(x => x.Distance)
                 .Select(x => new {
                     x.Room.Id,
+                    x.Room.UserId,
                     x.Room.Title,
                     x.Room.Price,
                     x.Room.DetailedAddress,
                     x.Room.Images,
-                    x.Room.Amenities, // Trả thêm mảng tiện nghi để frontend hiển thị icon ngoài danh sách tin
+                    x.Room.Amenities,
                     Location = new { x.Room.Latitude, x.Room.Longitude },
                     DistanceKm = Math.Round(x.Distance, 2)
                 });

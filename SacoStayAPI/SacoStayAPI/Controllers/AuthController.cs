@@ -130,6 +130,26 @@ namespace SacoStayAPI.Controllers
             });
         }
 
+        /// <summary>Hồ sơ công khai để hiển thị tên/avatar trong chat (Bearer).</summary>
+        [Authorize(AuthenticationSchemes = "Bearer")]
+        [HttpGet("user/{userId}")]
+        public async Task<IActionResult> GetUserPublicProfile(Guid userId)
+        {
+            var user = await _userManager.FindByIdAsync(userId.ToString());
+            if (user == null) return NotFound();
+
+            var roles = await _userManager.GetRolesAsync(user);
+            return Ok(new
+            {
+                user.Id,
+                user.UserName,
+                user.FirstName,
+                user.LastName,
+                ProfileImage = user.ProfileImages,
+                Roles = roles
+            });
+        }
+
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] RegisterDTO dto)
         {
