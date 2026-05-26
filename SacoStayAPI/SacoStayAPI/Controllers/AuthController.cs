@@ -145,6 +145,11 @@ namespace SacoStayAPI.Controllers
                 user.UserName,
                 user.FirstName,
                 user.LastName,
+                user.Gender,
+                user.Job,
+                user.LivingArea,
+                user.DateOfBirth,
+                user.Bio,
                 ProfileImage = user.ProfileImages,
                 Roles = roles
             });

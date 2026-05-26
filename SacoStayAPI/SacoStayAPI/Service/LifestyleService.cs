@@ -213,6 +213,44 @@ namespace SacoStayAPI.Service
                 .ToList();
         }
 
+        public async Task<List<UserLifestyleAnswerDTO>> GetUserAnswersAsync(string userId)
+        {
+            var userAnswers = (await _unitOfWork.Repository<UserLifestyle>()
+                .FindAsync(u => u.UserId == userId)).ToList();
+
+            if (!userAnswers.Any())
+                return new List<UserLifestyleAnswerDTO>();
+
+            var optionIds = userAnswers.Select(a => a.LifestyleOptionId).Distinct().ToList();
+            var options = (await _unitOfWork.Repository<LifestyleOption>()
+                .FindAsync(o => optionIds.Contains(o.Id))).ToList();
+
+            var questionIds = options.Select(o => o.LifestyleQuestionId).Distinct().ToList();
+            var questions = (await _unitOfWork.Repository<LifestyleQuestion>()
+                .FindAsync(q => questionIds.Contains(q.Id))).ToList();
+
+            var seenQuestions = new HashSet<int>();
+            var result = new List<UserLifestyleAnswerDTO>();
+
+            foreach (var answer in userAnswers.OrderBy(a => a.LifestyleQuestionId))
+            {
+                var opt = options.FirstOrDefault(o => o.Id == answer.LifestyleOptionId);
+                if (opt == null) continue;
+                if (!seenQuestions.Add(opt.LifestyleQuestionId)) continue;
+
+                var q = questions.FirstOrDefault(x => x.Id == opt.LifestyleQuestionId);
+                result.Add(new UserLifestyleAnswerDTO
+                {
+                    QuestionId = opt.LifestyleQuestionId,
+                    QuestionContent = q?.Content ?? string.Empty,
+                    OptionId = opt.Id,
+                    OptionContent = opt.Content
+                });
+            }
+
+            return result.OrderBy(r => r.QuestionId).ToList();
+        }
+
         public async Task SaveSwipeActionAsync(string currentUserId, string targetUserId, bool isLike)
         {
             var newSwipe = new UserSwipe

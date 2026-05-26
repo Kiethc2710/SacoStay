@@ -59,6 +59,34 @@ namespace SacoStayAPI.Controllers
                 return StatusCode(500, $"Lỗi hệ thống: {ex.Message}");
             }
         }
+        [Authorize(AuthenticationSchemes = "Bearer")]
+        [HttpGet("my-answers")]
+        public async Task<IActionResult> GetMyAnswers()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized("Token không hợp lệ.");
+
+            var answers = await _lifestyleService.GetUserAnswersAsync(userId);
+            return Ok(answers);
+        }
+
+        [Authorize(AuthenticationSchemes = "Bearer")]
+        [HttpGet("answers/{userId}")]
+        public async Task<IActionResult> GetUserAnswers(string userId)
+        {
+            var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                             ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+            if (string.IsNullOrEmpty(currentUserId))
+                return Unauthorized("Token không hợp lệ.");
+            if (string.IsNullOrWhiteSpace(userId))
+                return BadRequest("Thiếu userId.");
+
+            var answers = await _lifestyleService.GetUserAnswersAsync(userId);
+            return Ok(answers);
+        }
+
         [Authorize(AuthenticationSchemes = "Bearer")] 
         [HttpPost("submit")]
         public async Task<IActionResult> SubmitAnswers([FromBody] UserSubmitLifestyleDTO dto)
