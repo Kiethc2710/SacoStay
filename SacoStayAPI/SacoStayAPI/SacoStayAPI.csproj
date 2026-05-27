@@ -20,6 +20,7 @@
 	  <PackageReference Include="MimeKit" Version="4.16.0" />
 	  <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.*" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+    <PackageReference Include="payOS" Version="*" />
   </ItemGroup>
 
   <ItemGroup>

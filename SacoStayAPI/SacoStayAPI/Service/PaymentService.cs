@@ -1,34 +1,39 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using SacoStayAPI.Model.DTOs;
 using SacoStayAPI.Model.Entities;
 using SacoStayAPI.Repositories;
 using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Security.Cryptography;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace SacoStayAPI.Service
 {
     public class PaymentService : IPaymentService
     {
+        private static readonly HttpClient HttpClient = new();
+
         private readonly IUnitOfWork _unitOfWork;
         private readonly IConfiguration _configuration;
+        private readonly ILogger<PaymentService> _logger;
 
-        public PaymentService(IUnitOfWork unitOfWork, IConfiguration configuration)
+        public PaymentService(IUnitOfWork unitOfWork, IConfiguration configuration, ILogger<PaymentService> logger)
         {
             _unitOfWork = unitOfWork;
             _configuration = configuration;
+            _logger = logger;
         }
 
-        // Đổi tên hàm và nhận vào ID phòng + Tên gói
         public async Task<string> CreatePackagePaymentUrlAsync(Guid roomPostId, string packageName)
         {
             var roomPost = await _unitOfWork.Repository<RoomPost>().GetByIdAsync(roomPostId);
             if (roomPost == null) throw new ArgumentException("Bài đăng không tồn tại.");
 
-            // Tính tiền theo gói
             decimal amount = packageName.ToUpper() switch
             {
                 "BASIC" => 53000,
@@ -38,14 +43,13 @@ namespace SacoStayAPI.Service
                 _ => throw new ArgumentException("Gói không hợp lệ.")
             };
 
-            var orderId = Guid.NewGuid().ToString();
-
+            var orderCode = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var transaction = new PaymentTransaction
             {
-                OrderId = orderId,
+                OrderId = orderCode.ToString(),
                 Amount = amount,
                 Status = "Pending",
-                PaymentMethod = "VNPay",
+                PaymentMethod = "PayOS",
                 RoomPostId = roomPostId,
                 PackageName = packageName.ToUpper(),
                 CreatedAt = DateTime.UtcNow
@@ -54,116 +58,135 @@ namespace SacoStayAPI.Service
             await _unitOfWork.Repository<PaymentTransaction>().AddAsync(transaction);
             await _unitOfWork.CompleteAsync();
 
-            // SỬA: Thêm toán tử chống null để xóa bỏ các Warning CS8604 khi tạo SortedDictionary
-            var vnp_TmnCode = _configuration["VNPay:TmnCode"] ?? string.Empty;
-            var vnp_HashSecret = _configuration["VNPay:HashSecret"] ?? string.Empty;
-            var vnp_Url = _configuration["VNPay:BaseUrl"] ?? string.Empty;
-            var vnp_ReturnUrl = _configuration["VNPay:ReturnUrl"] ?? string.Empty;
+            var clientId = _configuration["PayOS:ClientId"] ?? string.Empty;
+            var apiKey = _configuration["PayOS:ApiKey"] ?? string.Empty;
+            var checksumKey = _configuration["PayOS:ChecksumKey"] ?? string.Empty;
+            var baseUrl = _configuration["PayOS:BaseUrl"] ?? "https://api-merchant.payos.vn";
+            var cancelUrl = _configuration["PayOS:CancelUrl"] ?? string.Empty;
+            var returnUrl = _configuration["PayOS:ReturnUrl"] ?? string.Empty;
 
-            var vnp_Params = new SortedDictionary<string, string>(StringComparer.Ordinal)
+            if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(checksumKey))
+                throw new ArgumentException("Thiếu cấu hình PayOS.");
+
+            var description = $"Thanh toan {packageName.ToUpper()}";
+            var signatureData = $"amount={amount:0}&cancelUrl={cancelUrl}&description={description}&orderCode={orderCode}&returnUrl={returnUrl}";
+            var signature = CreateHmacSha256(signatureData, checksumKey);
+
+            var payload = new
             {
-                { "vnp_Version", "2.1.0" },
-                { "vnp_Command", "pay" },
-                { "vnp_TmnCode", vnp_TmnCode },
-                { "vnp_Amount", ((long)(amount * 100)).ToString() },
-                { "vnp_CreateDate", DateTime.Now.ToString("yyyyMMddHHmmss") },
-                { "vnp_CurrCode", "VND" },
-                { "vnp_IpAddr", "127.0.0.1" },
-                { "vnp_Locale", "vn" },
-                { "vnp_OrderInfo", $"ThanhToan_{packageName.ToUpper()}_{roomPostId.ToString().Substring(0, 8)}" },
-                { "vnp_OrderType", "other" },
-                { "vnp_ReturnUrl", vnp_ReturnUrl },
-                { "vnp_TxnRef", orderId }
+                orderCode,
+                amount = (int)amount,
+                description,
+                cancelUrl,
+                returnUrl,
+                signature
             };
 
-            var hashData = new StringBuilder();
-            var queryString = new StringBuilder();
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}/v2/payment-requests");
+            request.Headers.Add("x-client-id", clientId);
+            request.Headers.Add("x-api-key", apiKey);
+            request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
-            foreach (var kvp in vnp_Params)
+            var response = await HttpClient.SendAsync(request);
+            var content = await response.Content.ReadAsStringAsync();
+            if (!response.IsSuccessStatusCode)
             {
-                if (!string.IsNullOrEmpty(kvp.Value))
-                {
-                    // SỬA: Sử dụng Uri.EscapeDataString chuẩn RFC 3986 thay cho WebUtility.UrlEncode cũ
-                    var encodedKey = Uri.EscapeDataString(kvp.Key);
-                    var encodedValue = Uri.EscapeDataString(kvp.Value);
-
-                    hashData.Append($"{encodedKey}={encodedValue}&");
-                    queryString.Append($"{encodedKey}={encodedValue}&");
-                }
+                _logger.LogError("PayOS create payment failed: {StatusCode} - {Content}", response.StatusCode, content);
+                throw new ArgumentException("Không thể tạo link thanh toán PayOS.");
             }
 
-            if (hashData.Length > 0)
+            var payosResponse = JsonSerializer.Deserialize<PayOSCreateResponseDTO>(content, new JsonSerializerOptions
             {
-                hashData.Length -= 1;
-                queryString.Length -= 1;
-            }
+                PropertyNameCaseInsensitive = true
+            });
 
-            var secretBytes = Encoding.UTF8.GetBytes(vnp_HashSecret);
-            var dataBytes = Encoding.UTF8.GetBytes(hashData.ToString());
+            var checkoutUrl = payosResponse?.Data?.CheckoutUrl;
+            if (string.IsNullOrWhiteSpace(checkoutUrl))
+                throw new ArgumentException("PayOS không trả về checkoutUrl.");
 
-            using var hmac = new HMACSHA512(secretBytes);
-            var hashBytes = hmac.ComputeHash(dataBytes);
-
-            // SỬA: Đổi sang .ToUpper() để khớp chuẩn so khớp mã hash của hệ thống VNPay
-            var secureHash = BitConverter.ToString(hashBytes).Replace("-", "").ToUpper();
-
-            queryString.Append($"&vnp_SecureHash={secureHash}");
-
-            return $"{vnp_Url}?{queryString}";
+            return checkoutUrl;
         }
 
         public async Task HandleReturnAsync(IQueryCollection query)
         {
-            var orderId = query["vnp_TxnRef"].ToString();
-            var responseCode = query["vnp_ResponseCode"].ToString();
+            var orderCode = query["orderCode"].ToString();
+            var status = query["status"].ToString();
 
-            var transactions = await _unitOfWork.Repository<PaymentTransaction>().FindAsync(t => t.OrderId == orderId);
+            var transactions = await _unitOfWork.Repository<PaymentTransaction>().FindAsync(t => t.OrderId == orderCode);
             var transaction = transactions.FirstOrDefault();
-
             if (transaction == null) return;
 
-            if (responseCode == "00")
+            if (status.Equals("PAID", StringComparison.OrdinalIgnoreCase) || status.Equals("success", StringComparison.OrdinalIgnoreCase))
             {
                 transaction.Status = "Success";
-                transaction.TransactionNo = query["vnp_TransactionNo"];
-
                 if (transaction.RoomPostId.HasValue)
                 {
                     var roomPost = await _unitOfWork.Repository<RoomPost>().GetByIdAsync(transaction.RoomPostId.Value);
                     if (roomPost != null)
                     {
-                        // 1. Cập nhật tên gói dịch vụ mới
                         roomPost.PackageTier = transaction.PackageName ?? "BASIC";
-
-                        // 2. Logic cộng dồn ngày: Nếu bài đăng vẫn còn hạn thì cộng dồn thêm 30 ngày, nếu đã hết hạn thì tính 30 ngày từ hôm nay
                         if (roomPost.PackageExpiresAt.HasValue && roomPost.PackageExpiresAt > DateTime.UtcNow)
-                        {
                             roomPost.PackageExpiresAt = roomPost.PackageExpiresAt.Value.AddDays(30);
-                        }
                         else
-                        {
                             roomPost.PackageExpiresAt = DateTime.UtcNow.AddDays(30);
-                        }
 
-                        // 3. Xử lý trạng thái:
-                        // - Nếu là bài mới toanh (PendingPayment) -> Chuyển sang chờ Admin duyệt
-                        // - Nếu là bài cũ đang hoạt động (Active) -> Mua gói xong vẫn giữ nguyên Active cho lên sóng luôn
                         if (roomPost.Status == "PendingPayment")
-                        {
                             roomPost.Status = "PendingApproval";
-                        }
 
                         _unitOfWork.Repository<RoomPost>().Update(roomPost);
                     }
                 }
             }
-            else
+            else if (!string.IsNullOrWhiteSpace(status))
             {
                 transaction.Status = "Failed";
             }
 
             _unitOfWork.Repository<PaymentTransaction>().Update(transaction);
             await _unitOfWork.CompleteAsync();
+        }
+
+        public async Task HandleWebhookAsync(string payload)
+        {
+            using var doc = JsonDocument.Parse(payload);
+            var root = doc.RootElement;
+            var data = root.GetProperty("data");
+            var orderCode = data.GetProperty("orderCode").GetInt64().ToString();
+            var code = data.TryGetProperty("code", out var codeEl) ? codeEl.GetString() : null;
+
+            var transactions = await _unitOfWork.Repository<PaymentTransaction>().FindAsync(t => t.OrderId == orderCode);
+            var transaction = transactions.FirstOrDefault();
+            if (transaction == null) return;
+
+            if (code == "00")
+            {
+                transaction.Status = "Success";
+                if (transaction.RoomPostId.HasValue)
+                {
+                    var roomPost = await _unitOfWork.Repository<RoomPost>().GetByIdAsync(transaction.RoomPostId.Value);
+                    if (roomPost != null)
+                    {
+                        roomPost.PackageTier = transaction.PackageName ?? "BASIC";
+                        if (roomPost.PackageExpiresAt.HasValue && roomPost.PackageExpiresAt > DateTime.UtcNow)
+                            roomPost.PackageExpiresAt = roomPost.PackageExpiresAt.Value.AddDays(30);
+                        else
+                            roomPost.PackageExpiresAt = DateTime.UtcNow.AddDays(30);
+                        if (roomPost.Status == "PendingPayment")
+                            roomPost.Status = "PendingApproval";
+                        _unitOfWork.Repository<RoomPost>().Update(roomPost);
+                    }
+                }
+            }
+
+            _unitOfWork.Repository<PaymentTransaction>().Update(transaction);
+            await _unitOfWork.CompleteAsync();
+        }
+
+        private static string CreateHmacSha256(string data, string secret)
+        {
+            using var hmac = new System.Security.Cryptography.HMACSHA256(Encoding.UTF8.GetBytes(secret));
+            var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(data));
+            return BitConverter.ToString(hash).Replace("-", string.Empty).ToLowerInvariant();
         }
     }
 }

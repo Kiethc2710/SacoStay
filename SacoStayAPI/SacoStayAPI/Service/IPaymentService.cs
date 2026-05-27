@@ -8,5 +8,6 @@ namespace SacoStayAPI.Service
     {
         Task<string> CreatePackagePaymentUrlAsync(Guid roomPostId, string packageName);
         Task HandleReturnAsync(IQueryCollection query);
+        Task HandleWebhookAsync(string payload);
     }
 }

@@ -210,6 +210,54 @@ namespace SacoStayAPI.Controllers
             }
         }
 
+        [Authorize(AuthenticationSchemes = "Bearer")]
+        [HttpGet("my-likes")]
+        public async Task<IActionResult> GetMyLikes()
+        {
+            var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                             ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+
+            if (string.IsNullOrEmpty(currentUserId))
+                return Unauthorized("Token không hợp lệ.");
+
+            var likes = await _lifestyleService.GetMyLikesAsync(currentUserId);
+            return Ok(likes);
+        }
+
+        [Authorize(AuthenticationSchemes = "Bearer")]
+        [HttpDelete("my-likes/{targetUserId}")]
+        public async Task<IActionResult> RemoveLike(string targetUserId)
+        {
+            var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                             ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+
+            if (string.IsNullOrEmpty(currentUserId))
+                return Unauthorized("Token không hợp lệ.");
+
+            if (string.IsNullOrWhiteSpace(targetUserId))
+                return BadRequest("Thiếu ID người dùng.");
+
+            var removed = await _lifestyleService.RemoveLikeAsync(currentUserId, targetUserId);
+            if (!removed)
+                return NotFound(new { message = "Không tìm thấy lượt thích cần xoá." });
+
+            return Ok(new { message = "Đã xoá khỏi danh sách thích." });
+        }
+
+        [Authorize(AuthenticationSchemes = "Bearer")]
+        [HttpGet("swipe-quota")]
+        public async Task<IActionResult> GetSwipeQuota()
+        {
+            var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                             ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+
+            if (string.IsNullOrEmpty(currentUserId))
+                return Unauthorized("Token không hợp lệ.");
+
+            var quota = await _lifestyleService.GetSwipeQuotaAsync(currentUserId);
+            return Ok(quota);
+        }
+
         /// <summary>
         /// API 1: Chỉ cập nhật nội dung câu hỏi
         /// URL: PUT /api/lifestylequestions/content

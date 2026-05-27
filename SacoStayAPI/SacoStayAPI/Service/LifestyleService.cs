@@ -314,5 +314,97 @@ namespace SacoStayAPI.Service
             // Lưu toàn bộ thay đổi của Options xuống Database
             await _unitOfWork.CompleteAsync();
         }
+
+        private static DateTime GetStartOfWeekUtc(DateTime utcNow)
+        {
+            var date = utcNow.Date;
+            int diff = (7 + (date.DayOfWeek - DayOfWeek.Monday)) % 7;
+            return date.AddDays(-diff);
+        }
+
+        public async Task<List<WishlistItemDTO>> GetMyLikesAsync(string currentUserId)
+        {
+            var currentUserAnswers = await _unitOfWork.Repository<UserLifestyle>()
+                .FindAsync(u => u.UserId == currentUserId);
+            var myOptionIds = currentUserAnswers.Select(x => x.LifestyleOptionId).ToList();
+
+            var likes = (await _unitOfWork.Repository<UserSwipe>()
+                .FindAsync(s => s.SwiperId == currentUserId && s.IsLike))
+                .OrderByDescending(s => s.CreatedAt)
+                .ToList();
+
+            if (!likes.Any()) return new List<WishlistItemDTO>();
+
+            var targetUserIds = likes.Select(x => x.SwipedUserId).Distinct().ToList();
+            var accounts = (await _unitOfWork.Repository<Account>()
+                .FindAsync(a => targetUserIds.Contains(a.Id.ToString())))
+                .ToList();
+
+            var targetAnswers = (await _unitOfWork.Repository<UserLifestyle>()
+                .FindAsync(u => targetUserIds.Contains(u.UserId)))
+                .ToList();
+
+            var result = likes.Select(like =>
+            {
+                var account = accounts.FirstOrDefault(a => a.Id.ToString() == like.SwipedUserId);
+                var theirOptionIds = targetAnswers
+                    .Where(a => a.UserId == like.SwipedUserId)
+                    .Select(a => a.LifestyleOptionId)
+                    .ToList();
+
+                var matched = myOptionIds.Intersect(theirOptionIds).Count();
+                var score = myOptionIds.Count == 0 ? 0 : (int)Math.Round((double)matched / myOptionIds.Count * 100);
+                var displayName = account == null
+                    ? like.SwipedUserId
+                    : string.Join(" ", new[] { account.FirstName, account.LastName }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+                return new WishlistItemDTO
+                {
+                    UserId = like.SwipedUserId,
+                    DisplayName = string.IsNullOrWhiteSpace(displayName) ? like.SwipedUserId : displayName,
+                    AvatarUrl = account?.ProfileImages?.FirstOrDefault(),
+                    MatchingScore = score,
+                    LikedAt = like.CreatedAt
+                };
+            });
+
+            return result.ToList();
+        }
+
+        public async Task<bool> RemoveLikeAsync(string currentUserId, string targetUserId)
+        {
+            var existing = (await _unitOfWork.Repository<UserSwipe>()
+                .FindAsync(s => s.SwiperId == currentUserId && s.SwipedUserId == targetUserId && s.IsLike))
+                .FirstOrDefault();
+
+            if (existing == null) return false;
+
+            _unitOfWork.Repository<UserSwipe>().Remove(existing);
+            await _unitOfWork.CompleteAsync();
+            return true;
+        }
+
+        public async Task<SwipeQuotaDTO> GetSwipeQuotaAsync(string currentUserId)
+        {
+            var now = DateTime.UtcNow;
+            var startOfWeek = GetStartOfWeekUtc(now);
+            var nextWeekStart = startOfWeek.AddDays(7);
+
+            // TODO: thay bằng logic premium thực tế khi có bảng gói của user
+            var isPremium = false;
+            var weeklyLimit = isPremium ? (int?)null : 10;
+
+            var usedThisWeek = (await _unitOfWork.Repository<UserSwipe>()
+                .FindAsync(s => s.SwiperId == currentUserId && s.CreatedAt >= startOfWeek)).Count();
+
+            return new SwipeQuotaDTO
+            {
+                IsPremium = isPremium,
+                WeeklyLimit = weeklyLimit,
+                UsedThisWeek = usedThisWeek,
+                Remaining = isPremium ? null : Math.Max(weeklyLimit.Value - usedThisWeek, 0),
+                WeekResetAt = nextWeekStart
+            };
+        }
     }
 }

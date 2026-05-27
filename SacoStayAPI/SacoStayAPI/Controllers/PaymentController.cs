@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using SacoStayAPI.Service;
 using System;
+using System.IO;
 using System.Threading.Tasks;
 
 namespace SacoStayAPI.Controllers
@@ -24,7 +25,6 @@ namespace SacoStayAPI.Controllers
         {
             try
             {
-                // Gọi dịch vụ tính tiền theo gói và sinh link VNPay theo thuật toán cũ
                 var url = await _service.CreatePackagePaymentUrlAsync(roomPostId, packageName);
                 return Ok(new { paymentUrl = url });
             }
@@ -34,13 +34,20 @@ namespace SacoStayAPI.Controllers
             }
         }
 
-        [HttpGet("vnpay-return")]
-        public async Task<IActionResult> VnPayReturn()
+        [HttpGet("payos-return")]
+        public async Task<IActionResult> PayOSReturn()
         {
             await _service.HandleReturnAsync(Request.Query);
-
-            // Điều hướng về giao diện Frontend sau khi thanh toán xong
             return Redirect("http://localhost:4200/owner/my-posts?payment=completed");
+        }
+
+        [HttpPost("payos-webhook")]
+        public async Task<IActionResult> PayOSWebhook()
+        {
+            using var reader = new StreamReader(Request.Body);
+            var payload = await reader.ReadToEndAsync();
+            await _service.HandleWebhookAsync(payload);
+            return Ok(new { message = "OK" });
         }
     }
 }
