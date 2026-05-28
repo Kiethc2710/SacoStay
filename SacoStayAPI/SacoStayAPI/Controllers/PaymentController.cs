@@ -49,5 +49,19 @@ namespace SacoStayAPI.Controllers
             await _service.HandleWebhookAsync(payload);
             return Ok(new { message = "OK" });
         }
+
+        [Authorize(AuthenticationSchemes = "Bearer")]
+        [HttpGet("history")]
+        public async Task<IActionResult> GetTransactionHistory()
+        {
+            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                      ?? User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
+
+            if (string.IsNullOrWhiteSpace(userId) || !Guid.TryParse(userId, out var parsedUserId))
+                return Unauthorized(new { message = "Token không hợp lệ." });
+
+            var history = await _service.GetTransactionHistoryAsync(parsedUserId);
+            return Ok(history);
+        }
     }
 }

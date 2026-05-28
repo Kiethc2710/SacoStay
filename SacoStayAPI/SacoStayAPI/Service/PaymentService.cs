@@ -130,8 +130,8 @@ namespace SacoStayAPI.Service
                         else
                             roomPost.PackageExpiresAt = DateTime.UtcNow.AddDays(30);
 
-                        if (roomPost.Status == "PendingPayment")
-                            roomPost.Status = "PendingApproval";
+                        // Sau khi thanh toán thành công, luôn chuyển sang trạng thái chờ admin duyệt
+                        roomPost.Status = "PendingApproval";
 
                         _unitOfWork.Repository<RoomPost>().Update(roomPost);
                     }
@@ -171,8 +171,10 @@ namespace SacoStayAPI.Service
                             roomPost.PackageExpiresAt = roomPost.PackageExpiresAt.Value.AddDays(30);
                         else
                             roomPost.PackageExpiresAt = DateTime.UtcNow.AddDays(30);
-                        if (roomPost.Status == "PendingPayment")
-                            roomPost.Status = "PendingApproval";
+
+                        // Sau khi thanh toán thành công, luôn chuyển sang trạng thái chờ admin duyệt
+                        roomPost.Status = "PendingApproval";
+
                         _unitOfWork.Repository<RoomPost>().Update(roomPost);
                     }
                 }
@@ -180,6 +182,37 @@ namespace SacoStayAPI.Service
 
             _unitOfWork.Repository<PaymentTransaction>().Update(transaction);
             await _unitOfWork.CompleteAsync();
+        }
+
+        public async Task<IEnumerable<TransactionHistoryDTO>> GetTransactionHistoryAsync(Guid userId)
+        {
+            var roomPosts = (await _unitOfWork.Repository<RoomPost>()
+                .FindAsync(r => r.UserId == userId))
+                .ToList();
+
+            if (!roomPosts.Any())
+                return Enumerable.Empty<TransactionHistoryDTO>();
+
+            var roomPostIds = roomPosts.Select(r => r.Id).ToList();
+            var transactions = (await _unitOfWork.Repository<PaymentTransaction>()
+                .FindAsync(t => t.RoomPostId.HasValue && roomPostIds.Contains(t.RoomPostId.Value)))
+                .OrderByDescending(t => t.CreatedAt)
+                .ToList();
+
+            var roomLookup = roomPosts.ToDictionary(r => r.Id, r => r.Title);
+
+            return transactions.Select(t => new TransactionHistoryDTO
+            {
+                OrderId = t.OrderId,
+                Amount = t.Amount,
+                Status = t.Status,
+                PaymentMethod = t.PaymentMethod,
+                TransactionNo = t.TransactionNo,
+                CreatedAt = t.CreatedAt,
+                RoomPostId = t.RoomPostId,
+                RoomTitle = t.RoomPostId.HasValue && roomLookup.TryGetValue(t.RoomPostId.Value, out var title) ? title : null,
+                PackageName = t.PackageName
+            }).ToList();
         }
 
         private static string CreateHmacSha256(string data, string secret)
