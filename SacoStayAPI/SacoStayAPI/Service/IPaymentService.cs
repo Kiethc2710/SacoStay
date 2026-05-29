@@ -9,6 +9,7 @@ namespace SacoStayAPI.Service
     public interface IPaymentService
     {
         Task<string> CreatePackagePaymentUrlAsync(Guid roomPostId, string packageName);
+        Task<string> CreateTenantPackagePaymentUrlAsync(Guid userId, string packageName);
         Task HandleReturnAsync(IQueryCollection query);
         Task HandleWebhookAsync(string payload);
         Task<IEnumerable<TransactionHistoryDTO>> GetTransactionHistoryAsync(Guid userId);

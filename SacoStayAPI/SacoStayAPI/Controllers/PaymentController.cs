@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using SacoStayAPI.Model.DTOs;
 using SacoStayAPI.Service;
 using System;
 using System.IO;
@@ -20,12 +21,42 @@ namespace SacoStayAPI.Controllers
         }
 
         [Authorize(AuthenticationSchemes = "Bearer")]
-        [HttpPost("buy-package")]
-        public async Task<IActionResult> BuyPackage([FromQuery] Guid roomPostId, [FromQuery] string packageName)
+        [HttpPost("buy-landlord-package")]
+        public async Task<IActionResult> BuyLandlordPackage([FromBody] BuyLandlordPackageDTO dto)
         {
+            if (dto.RoomPostId == Guid.Empty)
+                return BadRequest(new { message = "Thiếu RoomPostId." });
+
+            if (string.IsNullOrWhiteSpace(dto.PackageName))
+                return BadRequest(new { message = "Thiếu tên gói." });
+
             try
             {
-                var url = await _service.CreatePackagePaymentUrlAsync(roomPostId, packageName);
+                var url = await _service.CreatePackagePaymentUrlAsync(dto.RoomPostId, dto.PackageName);
+                return Ok(new { paymentUrl = url });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [Authorize(AuthenticationSchemes = "Bearer")]
+        [HttpPost("buy-tenant-package")]
+        public async Task<IActionResult> BuyTenantPackage([FromBody] BuyTenantPackageDTO dto)
+        {
+            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                      ?? User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
+
+            if (string.IsNullOrWhiteSpace(userId) || !Guid.TryParse(userId, out var parsedUserId))
+                return Unauthorized(new { message = "Token không hợp lệ." });
+
+            if (string.IsNullOrWhiteSpace(dto.PackageName))
+                return BadRequest(new { message = "Thiếu tên gói." });
+
+            try
+            {
+                var url = await _service.CreateTenantPackagePaymentUrlAsync(parsedUserId, dto.PackageName);
                 return Ok(new { paymentUrl = url });
             }
             catch (ArgumentException ex)

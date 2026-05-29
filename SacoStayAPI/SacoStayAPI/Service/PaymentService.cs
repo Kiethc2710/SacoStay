@@ -7,7 +7,6 @@ using SacoStayAPI.Repositories;
 using System;
 using System.Linq;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -34,15 +33,21 @@ namespace SacoStayAPI.Service
             var roomPost = await _unitOfWork.Repository<RoomPost>().GetByIdAsync(roomPostId);
             if (roomPost == null) throw new ArgumentException("Bài đăng không tồn tại.");
 
-            decimal amount = packageName.ToUpper() switch
-            {
-                "BASIC" => 53000,
-                "LITE" => 295000,
-                "PRO" => 737500,
-                "ELITE" => 1475000,
-                _ => throw new ArgumentException("Gói không hợp lệ.")
-            };
+            var amount = GetLandlordPackageAmount(packageName);
+            return await CreatePaymentLinkAsync(amount, $"LANDLORD_{packageName.ToUpper()}", roomPostId, null, "Landlord");
+        }
 
+        public async Task<string> CreateTenantPackagePaymentUrlAsync(Guid userId, string packageName)
+        {
+            var account = await _unitOfWork.Repository<Account>().GetByIdAsync(userId);
+            if (account == null) throw new ArgumentException("Người dùng không tồn tại.");
+
+            var amount = GetTenantPackageAmount(packageName);
+            return await CreatePaymentLinkAsync(amount, $"TENANT_{packageName.ToUpper()}", null, userId, "Tenant");
+        }
+
+        private async Task<string> CreatePaymentLinkAsync(decimal amount, string packageCode, Guid? roomPostId, Guid? userId, string buyerType)
+        {
             var orderCode = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var transaction = new PaymentTransaction
             {
@@ -51,7 +56,9 @@ namespace SacoStayAPI.Service
                 Status = "Pending",
                 PaymentMethod = "PayOS",
                 RoomPostId = roomPostId,
-                PackageName = packageName.ToUpper(),
+                UserId = userId,
+                PackageName = packageCode,
+                BuyerType = buyerType,
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -68,7 +75,7 @@ namespace SacoStayAPI.Service
             if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(checksumKey))
                 throw new ArgumentException("Thiếu cấu hình PayOS.");
 
-            var description = $"Thanh toan {packageName.ToUpper()}";
+            var description = packageCode;
             var signatureData = $"amount={amount:0}&cancelUrl={cancelUrl}&description={description}&orderCode={orderCode}&returnUrl={returnUrl}";
             var signature = CreateHmacSha256(signatureData, checksumKey);
 
@@ -118,32 +125,14 @@ namespace SacoStayAPI.Service
 
             if (status.Equals("PAID", StringComparison.OrdinalIgnoreCase) || status.Equals("success", StringComparison.OrdinalIgnoreCase))
             {
-                transaction.Status = "Success";
-                if (transaction.RoomPostId.HasValue)
-                {
-                    var roomPost = await _unitOfWork.Repository<RoomPost>().GetByIdAsync(transaction.RoomPostId.Value);
-                    if (roomPost != null)
-                    {
-                        roomPost.PackageTier = transaction.PackageName ?? "BASIC";
-                        if (roomPost.PackageExpiresAt.HasValue && roomPost.PackageExpiresAt > DateTime.UtcNow)
-                            roomPost.PackageExpiresAt = roomPost.PackageExpiresAt.Value.AddDays(30);
-                        else
-                            roomPost.PackageExpiresAt = DateTime.UtcNow.AddDays(30);
-
-                        // Sau khi thanh toán thành công, luôn chuyển sang trạng thái chờ admin duyệt
-                        roomPost.Status = "PendingApproval";
-
-                        _unitOfWork.Repository<RoomPost>().Update(roomPost);
-                    }
-                }
+                await ApplySuccessAsync(transaction);
             }
             else if (!string.IsNullOrWhiteSpace(status))
             {
                 transaction.Status = "Failed";
+                _unitOfWork.Repository<PaymentTransaction>().Update(transaction);
+                await _unitOfWork.CompleteAsync();
             }
-
-            _unitOfWork.Repository<PaymentTransaction>().Update(transaction);
-            await _unitOfWork.CompleteAsync();
         }
 
         public async Task HandleWebhookAsync(string payload)
@@ -160,23 +149,39 @@ namespace SacoStayAPI.Service
 
             if (code == "00")
             {
-                transaction.Status = "Success";
-                if (transaction.RoomPostId.HasValue)
+                await ApplySuccessAsync(transaction);
+            }
+        }
+
+        private async Task ApplySuccessAsync(PaymentTransaction transaction)
+        {
+            transaction.Status = "Success";
+
+            if (transaction.BuyerType == "Landlord" && transaction.RoomPostId.HasValue)
+            {
+                var roomPost = await _unitOfWork.Repository<RoomPost>().GetByIdAsync(transaction.RoomPostId.Value);
+                if (roomPost != null)
                 {
-                    var roomPost = await _unitOfWork.Repository<RoomPost>().GetByIdAsync(transaction.RoomPostId.Value);
-                    if (roomPost != null)
-                    {
-                        roomPost.PackageTier = transaction.PackageName ?? "BASIC";
-                        if (roomPost.PackageExpiresAt.HasValue && roomPost.PackageExpiresAt > DateTime.UtcNow)
-                            roomPost.PackageExpiresAt = roomPost.PackageExpiresAt.Value.AddDays(30);
-                        else
-                            roomPost.PackageExpiresAt = DateTime.UtcNow.AddDays(30);
+                    roomPost.PackageTier = transaction.PackageName ?? "LANDLORD_BASIC";
+                    if (roomPost.PackageExpiresAt.HasValue && roomPost.PackageExpiresAt > DateTime.UtcNow)
+                        roomPost.PackageExpiresAt = roomPost.PackageExpiresAt.Value.AddDays(30);
+                    else
+                        roomPost.PackageExpiresAt = DateTime.UtcNow.AddDays(30);
 
-                        // Sau khi thanh toán thành công, luôn chuyển sang trạng thái chờ admin duyệt
-                        roomPost.Status = "PendingApproval";
-
-                        _unitOfWork.Repository<RoomPost>().Update(roomPost);
-                    }
+                    roomPost.Status = "PendingApproval";
+                    _unitOfWork.Repository<RoomPost>().Update(roomPost);
+                }
+            }
+            else if (transaction.BuyerType == "Tenant" && transaction.UserId.HasValue)
+            {
+                var account = await _unitOfWork.Repository<Account>().GetByIdAsync(transaction.UserId.Value);
+                if (account != null)
+                {
+                    account.TenantPackageType = "Premium";
+                    account.TenantPackageExpiresAt = account.TenantPackageExpiresAt.HasValue && account.TenantPackageExpiresAt > DateTime.UtcNow
+                        ? account.TenantPackageExpiresAt.Value.AddDays(30)
+                        : DateTime.UtcNow.AddDays(30);
+                    _unitOfWork.Repository<Account>().Update(account);
                 }
             }
 
@@ -184,18 +189,28 @@ namespace SacoStayAPI.Service
             await _unitOfWork.CompleteAsync();
         }
 
-        public async Task<IEnumerable<TransactionHistoryDTO>> GetTransactionHistoryAsync(Guid userId)
+        private static decimal GetLandlordPackageAmount(string packageName) => packageName.ToUpper() switch
         {
-            var roomPosts = (await _unitOfWork.Repository<RoomPost>()
-                .FindAsync(r => r.UserId == userId))
-                .ToList();
+            "BASIC" => 53000,
+            "LITE" => 295000,
+            "PRO" => 737500,
+            "ELITE" => 1475000,
+            _ => throw new ArgumentException("Gói landlord không hợp lệ.")
+        };
 
-            if (!roomPosts.Any())
-                return Enumerable.Empty<TransactionHistoryDTO>();
+        private static decimal GetTenantPackageAmount(string packageName) => packageName.ToUpper() switch
+        {
+            "PREMIUM" => 80000,
+            _ => throw new ArgumentException("Gói tenant không hợp lệ.")
+        };
 
+        private async Task<IEnumerable<TransactionHistoryDTO>> GetTransactionHistoryInternalAsync(Guid userId)
+        {
+            var roomPosts = (await _unitOfWork.Repository<RoomPost>().FindAsync(r => r.UserId == userId)).ToList();
             var roomPostIds = roomPosts.Select(r => r.Id).ToList();
+
             var transactions = (await _unitOfWork.Repository<PaymentTransaction>()
-                .FindAsync(t => t.RoomPostId.HasValue && roomPostIds.Contains(t.RoomPostId.Value)))
+                .FindAsync(t => t.UserId == userId || (t.RoomPostId.HasValue && roomPostIds.Contains(t.RoomPostId.Value))))
                 .OrderByDescending(t => t.CreatedAt)
                 .ToList();
 
@@ -214,6 +229,9 @@ namespace SacoStayAPI.Service
                 PackageName = t.PackageName
             }).ToList();
         }
+
+        public Task<IEnumerable<TransactionHistoryDTO>> GetTransactionHistoryAsync(Guid userId)
+            => GetTransactionHistoryInternalAsync(userId);
 
         private static string CreateHmacSha256(string data, string secret)
         {
