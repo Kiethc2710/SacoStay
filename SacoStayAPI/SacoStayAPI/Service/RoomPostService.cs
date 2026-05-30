@@ -87,6 +87,7 @@ namespace SacoStayAPI.Service
                 District = dto.District,
                 Area = dto.Area,
                 MaxPeople = dto.MaxPeople,
+                CurrentPeople = 0,
                 Price = dto.Price,
                 Latitude = lat,
                 Longitude = lng,
@@ -130,6 +131,8 @@ namespace SacoStayAPI.Service
                     x.Room.District,
                     x.Room.Area,
                     x.Room.MaxPeople,
+                    x.Room.CurrentPeople,
+                    x.Room.PackageTier,
                     x.Room.Status,
                     x.Room.Images,
                     x.Room.Amenities,
@@ -172,7 +175,7 @@ namespace SacoStayAPI.Service
             await _unitOfWork.CompleteAsync();
         }
 
-        public async Task<RoomPost> UpdateRoomPostStatusAsync(Guid roomPostId, Guid userId, string status)
+        public async Task<RoomPost> UpdateRoomPostStatusAsync(Guid roomPostId, Guid userId, string status, int? currentPeople = null)
         {
             if (string.IsNullOrWhiteSpace(status))
                 throw new ArgumentException("Thiếu trạng thái (active hoặc inactive).");
@@ -189,12 +192,42 @@ namespace SacoStayAPI.Service
                 throw new UnauthorizedAccessException("Bạn không có quyền thay đổi trạng thái tin đăng này.");
 
             if (roomPost.Status != "Active" && roomPost.Status != "Hidden")
-                throw new ArgumentException("Chỉ có thể ẩn/hiện tin đã được duyệt (trạng thái Active hoặc Hidden).");
+                throw new ArgumentException("Chỉ có thể điều chỉnh tin đã được duyệt (trạng thái Active hoặc Hidden).");
+
+            if (currentPeople.HasValue)
+            {
+                if (currentPeople.Value < 0)
+                    throw new ArgumentException("Số người đang ở không được âm.");
+                if (currentPeople.Value > roomPost.MaxPeople)
+                    throw new ArgumentException($"Số người đang ở không được vượt quá sức chứa ({roomPost.MaxPeople}).");
+                roomPost.CurrentPeople = currentPeople.Value;
+            }
 
             roomPost.Status = newStatus;
             _unitOfWork.Repository<RoomPost>().Update(roomPost);
             await _unitOfWork.CompleteAsync();
             return roomPost;
+        }
+
+        public async Task DeleteRoomPostAsync(Guid roomPostId, Guid userId)
+        {
+            var roomPost = await _unitOfWork.Repository<RoomPost>().GetByIdAsync(roomPostId);
+            if (roomPost == null)
+                throw new ArgumentException("Bài đăng không tồn tại.");
+
+            if (roomPost.UserId != userId)
+                throw new UnauthorizedAccessException("Bạn không có quyền xóa tin đăng này.");
+
+            if (!string.Equals(roomPost.Status, "Hidden", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("Chỉ có thể xóa tin ở trạng thái đã bị từ chối / ẩn.");
+
+            var views = await _unitOfWork.Repository<RoomViewHistory>()
+                .FindAsync(v => v.RoomPostId == roomPostId);
+            foreach (var view in views)
+                _unitOfWork.Repository<RoomViewHistory>().Remove(view);
+
+            _unitOfWork.Repository<RoomPost>().Remove(roomPost);
+            await _unitOfWork.CompleteAsync();
         }
 
         private static string? NormalizeLandlordStatus(string status) =>

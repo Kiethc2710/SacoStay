@@ -1,4 +1,5 @@
-﻿using SacoStayAPI.Model.DTOs;
+﻿using Microsoft.AspNetCore.Identity;
+using SacoStayAPI.Model.DTOs;
 using SacoStayAPI.Model.Entities;
 using SacoStayAPI.Repositories;
 
@@ -7,9 +8,12 @@ namespace SacoStayAPI.Service
     public class LifestyleService
     {
         private readonly IUnitOfWork _unitOfWork;
-        public LifestyleService(IUnitOfWork unitOfWork)
+        private readonly UserManager<Account> _userManager;
+
+        public LifestyleService(IUnitOfWork unitOfWork, UserManager<Account> userManager)
         {
             _unitOfWork = unitOfWork;
+            _userManager = userManager;
         }
         //1.lấy tất cả câu hỏi về lối sống kèm theo các lựa chọn
         public async Task<IEnumerable<LifestyleQuestionDTO>> GetAllQuestionsWithOptionsAsync()
@@ -71,24 +75,37 @@ namespace SacoStayAPI.Service
                 throw new ArgumentException($"Các OptionId sau không tồn tại: {string.Join(", ", invalidIds)}");
             }
 
-            // ================== THÊM LOGIC KIỂM TRA SỐ LƯỢNG CÂU HỎI ==================
+            // ================== KIỂM TRA SỐ CÂU (câu giá phòng có thể bỏ qua khi chưa có phòng) ==================
 
-            // Lấy tổng số lượng câu hỏi đang có trong hệ thống
-            var allQuestions = await _unitOfWork.Repository<LifestyleQuestion>().GetAllAsync();
-            int totalQuestionsInDb = allQuestions.Count();
+            var allQuestions = (await _unitOfWork.LifestyleRepository.GetAllWithOptionsAsync()).ToList();
+            int totalQuestionsInDb = allQuestions.Count;
 
-            // Lấy ra danh sách các ID câu hỏi mà User vừa trả lời (dùng Distinct để loại bỏ trùng lặp 
-            // phòng trường hợp user chọn 2 đáp án cho cùng 1 câu hỏi)
-            int answeredQuestionsCount = selectedOptions.Select(o => o.LifestyleQuestionId).Distinct().Count();
+            var answeredQuestionIds = selectedOptions.Select(o => o.LifestyleQuestionId).Distinct().ToHashSet();
+            int answeredQuestionsCount = answeredQuestionIds.Count;
 
-            // KIỂM TRA ĐIỀU KIỆN 2: Số câu trả lời phải bằng tổng số câu hỏi
-            if (answeredQuestionsCount < totalQuestionsInDb)
+            var roomStatusQuestion = FindRoomStatusQuestion(allQuestions);
+            var roomPriceQuestion = FindRoomPriceQuestion(allQuestions);
+
+            int requiredQuestions = totalQuestionsInDb;
+            if (ShouldSkipRoomPriceQuestion(allQuestions, selectedOptions, roomStatusQuestion, roomPriceQuestion))
             {
-                throw new ArgumentException($"Vui lòng trả lời đầy đủ tất cả các câu hỏi. Hệ thống có {totalQuestionsInDb} câu, nhưng bạn mới trả lời {answeredQuestionsCount} câu.");
+                requiredQuestions -= 1;
+                if (roomPriceQuestion != null)
+                {
+                    selectedOptions = selectedOptions
+                        .Where(o => o.LifestyleQuestionId != roomPriceQuestion.Id)
+                        .ToList();
+                    answeredQuestionsCount = selectedOptions.Select(o => o.LifestyleQuestionId).Distinct().Count();
+                }
             }
 
-            // KIỂM TRA ĐIỀU KIỆN 3 (Tùy chọn): Tránh trường hợp cố tình chọn 2 đáp án cho 1 câu hỏi
-            if (uniqueOptionIds.Count > totalQuestionsInDb)
+            if (answeredQuestionsCount < requiredQuestions)
+            {
+                throw new ArgumentException(
+                    $"Vui lòng trả lời đầy đủ tất cả các câu hỏi. Hệ thống yêu cầu {requiredQuestions} câu, nhưng bạn mới trả lời {answeredQuestionsCount} câu.");
+            }
+
+            if (selectedOptions.Count > requiredQuestions)
             {
                 throw new ArgumentException("Số lượng đáp án vượt quá tổng số câu hỏi. Mỗi câu hỏi chỉ được chọn 1 đáp án.");
             }
@@ -161,40 +178,36 @@ namespace SacoStayAPI.Service
             };
         }
         //gợi í danh sach những người phù hợp nhất dựa trên câu trả lời của họ (để gợi ý phòng ở phù hợp)
-        public async Task<List<SwipeCardDTO>> GetSwipeDeckAsync(string currentUserId, int limit)
+        public async Task<List<SwipeCardDTO>> GetSwipeDeckAsync(string currentUserId, int limit, bool includeSwiped = false)
         {
-            // 1. Lấy đáp án của current user
             var currentUserAnswers = await _unitOfWork.Repository<UserLifestyle>()
                 .FindAsync(u => u.UserId == currentUserId);
 
             var myOptionIds = currentUserAnswers.Select(x => x.LifestyleOptionId).ToList();
             int totalQuestions = myOptionIds.Count;
 
-            // Nếu user chưa làm bài test, trả về list rỗng
             if (totalQuestions == 0) return new List<SwipeCardDTO>();
 
-            // 2. Lấy danh sách ID những người user này ĐÃ QUẸT
-            var swipedHistory = await _unitOfWork.Repository<UserSwipe>()
-                .FindAsync(s => s.SwiperId == currentUserId);
-            var swipedIds = swipedHistory.Select(s => s.SwipedUserId).ToList();
+            var swipedIds = new List<string>();
+            if (!includeSwiped)
+            {
+                var swipedHistory = await _unitOfWork.Repository<UserSwipe>()
+                    .FindAsync(s => s.SwiperId == currentUserId);
+                swipedIds = swipedHistory.Select(s => s.SwipedUserId).ToList();
+            }
 
-            // 3. Lấy đáp án của TẤT CẢ những người khác (Trừ bản thân và những người đã quẹt)
             var allOtherAnswers = await _unitOfWork.Repository<UserLifestyle>()
                 .FindAsync(u => u.UserId != currentUserId && !swipedIds.Contains(u.UserId));
 
-            // 4. Gom nhóm đáp án theo từng UserId
             var groupedAnswers = allOtherAnswers.GroupBy(u => u.UserId);
-
             var deck = new List<SwipeCardDTO>();
 
-            // 5. Tính điểm hàng loạt
             foreach (var group in groupedAnswers)
             {
+                if (!await IsTenantUserAsync(group.Key)) continue;
+
                 var theirOptionIds = group.Select(x => x.LifestyleOptionId).ToList();
-
-                // Dùng phép giao (Intersect) để đếm số đáp án giống nhau
                 int matchedCount = myOptionIds.Intersect(theirOptionIds).Count();
-
                 int score = (int)Math.Round((double)matchedCount / totalQuestions * 100);
 
                 deck.Add(new SwipeCardDTO
@@ -204,13 +217,21 @@ namespace SacoStayAPI.Service
                 });
             }
 
-            // 6. Xào bài: Lấy những người hợp trên 50%, trộn ngẫu nhiên (hoặc sắp xếp cao xuống thấp), rồi cắt đúng 10 thẻ
             return deck
-                .Where(d => d.MatchingScore >= 50) // Có thể bỏ dòng này nếu muốn hiện cả người không hợp
-                .OrderByDescending(d => d.MatchingScore) // Ưu tiên người hợp nhất đưa lên trên
-                                                         // .OrderBy(x => Guid.NewGuid()) // Nếu muốn xào trộn ngẫu nhiên thì mở comment dòng này
+                .OrderByDescending(d => d.MatchingScore)
                 .Take(limit)
                 .ToList();
+        }
+
+        private async Task<bool> IsTenantUserAsync(string userId)
+        {
+            if (string.IsNullOrWhiteSpace(userId)) return false;
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null) return false;
+            var roles = await _userManager.GetRolesAsync(user);
+            return roles.Any(r =>
+                string.Equals(r, "tenants", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(r, "tenant", StringComparison.OrdinalIgnoreCase));
         }
 
         public async Task<List<UserLifestyleAnswerDTO>> GetUserAnswersAsync(string userId)
@@ -253,6 +274,27 @@ namespace SacoStayAPI.Service
 
         public async Task SaveSwipeActionAsync(string currentUserId, string targetUserId, bool isLike)
         {
+            var existingSwipes = (await _unitOfWork.Repository<UserSwipe>()
+                .FindAsync(s => s.SwiperId == currentUserId && s.SwipedUserId == targetUserId))
+                .OrderByDescending(s => s.CreatedAt)
+                .ToList();
+
+            var latest = existingSwipes.FirstOrDefault();
+            if (latest != null)
+            {
+                if (latest.IsLike == isLike)
+                    return;
+
+                latest.IsLike = isLike;
+                latest.CreatedAt = DateTime.UtcNow;
+
+                foreach (var duplicate in existingSwipes.Skip(1))
+                    _unitOfWork.Repository<UserSwipe>().Remove(duplicate);
+
+                await _unitOfWork.CompleteAsync();
+                return;
+            }
+
             var newSwipe = new UserSwipe
             {
                 SwiperId = currentUserId,
@@ -330,6 +372,8 @@ namespace SacoStayAPI.Service
 
             var likes = (await _unitOfWork.Repository<UserSwipe>()
                 .FindAsync(s => s.SwiperId == currentUserId && s.IsLike))
+                .GroupBy(s => s.SwipedUserId)
+                .Select(g => g.OrderByDescending(s => s.CreatedAt).First())
                 .OrderByDescending(s => s.CreatedAt)
                 .ToList();
 
@@ -373,13 +417,15 @@ namespace SacoStayAPI.Service
 
         public async Task<bool> RemoveLikeAsync(string currentUserId, string targetUserId)
         {
-            var existing = (await _unitOfWork.Repository<UserSwipe>()
+            var existingLikes = (await _unitOfWork.Repository<UserSwipe>()
                 .FindAsync(s => s.SwiperId == currentUserId && s.SwipedUserId == targetUserId && s.IsLike))
-                .FirstOrDefault();
+                .ToList();
 
-            if (existing == null) return false;
+            if (!existingLikes.Any()) return false;
 
-            _unitOfWork.Repository<UserSwipe>().Remove(existing);
+            foreach (var swipe in existingLikes)
+                _unitOfWork.Repository<UserSwipe>().Remove(swipe);
+
             await _unitOfWork.CompleteAsync();
             return true;
         }
@@ -390,8 +436,7 @@ namespace SacoStayAPI.Service
             var startOfWeek = GetStartOfWeekUtc(now);
             var nextWeekStart = startOfWeek.AddDays(7);
 
-            // TODO: thay bằng logic premium thực tế khi có bảng gói của user
-            var isPremium = false;
+            var isPremium = await IsTenantPremiumAsync(currentUserId);
             var weeklyLimit = isPremium ? (int?)null : 10;
 
             var usedThisWeek = (await _unitOfWork.Repository<UserSwipe>()
@@ -405,6 +450,88 @@ namespace SacoStayAPI.Service
                 Remaining = isPremium ? null : Math.Max(weeklyLimit.Value - usedThisWeek, 0),
                 WeekResetAt = nextWeekStart
             };
+        }
+
+        private async Task<bool> IsTenantPremiumAsync(string userId)
+        {
+            if (!Guid.TryParse(userId, out var guid)) return false;
+            var account = await _unitOfWork.Repository<Account>().GetByIdAsync(guid);
+            if (account == null) return false;
+            return string.Equals(account.TenantPackageType, "Premium", StringComparison.OrdinalIgnoreCase)
+                && account.TenantPackageExpiresAt.HasValue
+                && account.TenantPackageExpiresAt.Value > DateTime.UtcNow;
+        }
+
+        private static LifestyleQuestion? FindRoomStatusQuestion(List<LifestyleQuestion> questions)
+        {
+            var sorted = questions.OrderBy(q => q.Id).ToList();
+            if (sorted.Count >= 2) return sorted[sorted.Count - 2];
+            return sorted.FirstOrDefault(q => IsRoomStatusQuestion(q.Content));
+        }
+
+        private static LifestyleQuestion? FindRoomPriceQuestion(List<LifestyleQuestion> questions)
+        {
+            var sorted = questions.OrderBy(q => q.Id).ToList();
+            if (sorted.Count >= 1) return sorted.Last();
+            return sorted.FirstOrDefault(q => IsRoomPriceQuestion(q.Content));
+        }
+
+        private static bool ShouldSkipRoomPriceQuestion(
+            List<LifestyleQuestion> allQuestions,
+            List<LifestyleOption> selectedOptions,
+            LifestyleQuestion? roomStatusQuestion,
+            LifestyleQuestion? roomPriceQuestion)
+        {
+            if (roomPriceQuestion == null) return false;
+            var answeredIds = selectedOptions.Select(o => o.LifestyleQuestionId).Distinct().ToHashSet();
+            if (answeredIds.Contains(roomPriceQuestion.Id)) return false;
+
+            if (roomStatusQuestion != null)
+            {
+                var roomStatusAnswer = selectedOptions.FirstOrDefault(o => o.LifestyleQuestionId == roomStatusQuestion.Id);
+                if (roomStatusAnswer != null && !IsHasRoomYesOption(roomStatusAnswer.Content))
+                    return true;
+            }
+
+            if (answeredIds.Count == allQuestions.Count - 1)
+            {
+                var sorted = allQuestions.OrderBy(q => q.Id).ToList();
+                var last = sorted.Last();
+                if (last.Id == roomPriceQuestion.Id && sorted.Count >= 2)
+                {
+                    var beforeLast = sorted[^2];
+                    var prevAnswer = selectedOptions.FirstOrDefault(o => o.LifestyleQuestionId == beforeLast.Id);
+                    if (prevAnswer != null && !IsHasRoomYesOption(prevAnswer.Content))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsRoomStatusQuestion(string content)
+        {
+            var c = content.ToLowerInvariant();
+            if (c.Contains("tình trạng phòng")) return true;
+            if (c.Contains("phòng trọ") || c.Contains("phòng ở")) return true;
+            if (c.Contains("tìm được") && c.Contains("phòng")) return true;
+            return c.Contains("đã có") && c.Contains("phòng");
+        }
+
+        private static bool IsRoomPriceQuestion(string content)
+        {
+            var c = content.ToLowerInvariant();
+            if (c.Contains("tiền trọ") || c.Contains("tiền phòng")) return true;
+            return c.Contains("giá") && (c.Contains("phòng") || c.Contains("trọ") || c.Contains("thuê"));
+        }
+
+        private static bool IsHasRoomYesOption(string optionContent)
+        {
+            var opt = optionContent.ToLowerInvariant().Trim();
+            if (opt.Contains("chưa")) return false;
+            if (opt.Contains("không")) return false;
+            return opt.Contains("đã có") || opt.Contains("có phòng") || opt.Contains("đang thuê")
+                || opt == "có" || opt.StartsWith("có ");
         }
     }
 }

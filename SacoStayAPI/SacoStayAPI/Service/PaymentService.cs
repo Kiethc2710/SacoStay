@@ -135,6 +135,26 @@ namespace SacoStayAPI.Service
             }
         }
 
+        public async Task<string> BuildFrontendReturnUrlAsync(IQueryCollection query)
+        {
+            var orderCode = query["orderCode"].ToString();
+            var statusRaw = query["status"].ToString();
+            var payStatus =
+                statusRaw.Equals("PAID", StringComparison.OrdinalIgnoreCase) ||
+                statusRaw.Equals("success", StringComparison.OrdinalIgnoreCase)
+                    ? "success"
+                    : "failed";
+
+            var transactions = await _unitOfWork.Repository<PaymentTransaction>().FindAsync(t => t.OrderId == orderCode);
+            var transaction = transactions.FirstOrDefault();
+            var context = string.Equals(transaction?.BuyerType, "Tenant", StringComparison.OrdinalIgnoreCase)
+                ? "tenant"
+                : "landlord";
+
+            var baseUrl = (_configuration["Frontend:BaseUrl"] ?? "http://localhost:4200").TrimEnd('/');
+            return $"{baseUrl}/payment/result?status={payStatus}&context={context}&orderId={Uri.EscapeDataString(orderCode)}";
+        }
+
         public async Task HandleWebhookAsync(string payload)
         {
             using var doc = JsonDocument.Parse(payload);

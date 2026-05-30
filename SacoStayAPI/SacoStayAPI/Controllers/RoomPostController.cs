@@ -90,11 +90,40 @@ namespace SacoStayAPI.Controllers
 
             try
             {
-                var result = await _roomPostService.UpdateRoomPostStatusAsync(id, Guid.Parse(userId), dto.Status);
+                var result = await _roomPostService.UpdateRoomPostStatusAsync(id, Guid.Parse(userId), dto.Status, dto.CurrentPeople);
                 var message = result.Status == "Active"
                     ? "Đã bật hiển thị tin đăng."
                     : "Đã ẩn tin đăng.";
-                return Ok(new { message, status = result.Status, id = result.Id });
+                return Ok(new
+                {
+                    message,
+                    status = result.Status,
+                    currentPeople = result.CurrentPeople,
+                    maxPeople = result.MaxPeople,
+                    id = result.Id
+                });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
+        }
+
+        [Authorize(AuthenticationSchemes = "Bearer")]
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteRoomPost(Guid id)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            try
+            {
+                await _roomPostService.DeleteRoomPostAsync(id, Guid.Parse(userId));
+                return Ok(new { message = "Đã xóa tin đăng." });
             }
             catch (ArgumentException ex)
             {

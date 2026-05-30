@@ -14,6 +14,7 @@ namespace SacoStayAPI.Service
 
         Task RecordViewAsync(Guid roomPostId, Guid tenantId);
         Task<object> GetRoomAnalyticsAsync(Guid roomPostId, Guid userId);
-        Task<RoomPost> UpdateRoomPostStatusAsync(Guid roomPostId, Guid userId, string status);
+        Task<RoomPost> UpdateRoomPostStatusAsync(Guid roomPostId, Guid userId, string status, int? currentPeople = null);
+        Task DeleteRoomPostAsync(Guid roomPostId, Guid userId);
     }
 }

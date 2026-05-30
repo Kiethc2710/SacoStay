@@ -140,7 +140,7 @@ namespace SacoStayAPI.Controllers
 
         [Authorize(AuthenticationSchemes = "Bearer")]
         [HttpGet("swipe-deck")]
-        public async Task<IActionResult> GetSwipeDeck([FromQuery] int limit = 10)
+        public async Task<IActionResult> GetSwipeDeck([FromQuery] int limit = 10, [FromQuery] bool includeSwiped = false)
         {
             var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)
                              ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
@@ -180,7 +180,7 @@ namespace SacoStayAPI.Controllers
                 // =================================================================
 
                 // Trả cái limit (đã được kiểm duyệt sạch sẽ) xuống cho Service
-                var deck = await _lifestyleService.GetSwipeDeckAsync(currentUserId, limit);
+                var deck = await _lifestyleService.GetSwipeDeckAsync(currentUserId, limit, includeSwiped);
                 return Ok(deck);
             }
             catch (Exception ex)

@@ -409,6 +409,9 @@ namespace SacoStayAPI.Migrations
                     b.Property<double>("Longitude")
                         .HasColumnType("double precision");
 
+                    b.Property<int>("CurrentPeople")
+                        .HasColumnType("integer");
+
                     b.Property<int>("MaxPeople")
                         .HasColumnType("integer");
 

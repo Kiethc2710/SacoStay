@@ -13,6 +13,8 @@ namespace SacoStayAPI.Model.Entities
         public string District { get; set; } = string.Empty;
         public double Area { get; set; }
         public int MaxPeople { get; set; }
+        /// <summary>Số người đang ở trong căn (0 = chưa có ai thuê thêm).</summary>
+        public int CurrentPeople { get; set; }
         public decimal Price { get; set; }
         public double Latitude { get; set; }
         public double Longitude { get; set; }

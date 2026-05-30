@@ -27,7 +27,8 @@ namespace SacoStayAPI.Controllers
                 .Where(m => (m.SenderId == currentUserId && m.ReceiverId == otherUserId) ||
                             (m.SenderId == otherUserId && m.ReceiverId == currentUserId))
                 .OrderBy(m => m.SentAt)
-                    .Select(m => new {
+                    .Select(m => new
+                    {
                         m.SenderId,
                         m.Message,
                         m.SentAt

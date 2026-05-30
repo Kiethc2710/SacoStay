@@ -69,7 +69,8 @@ namespace SacoStayAPI.Controllers
         public async Task<IActionResult> PayOSReturn()
         {
             await _service.HandleReturnAsync(Request.Query);
-            return Redirect("http://localhost:4200/owner/my-posts?payment=completed");
+            var redirectUrl = await _service.BuildFrontendReturnUrlAsync(Request.Query);
+            return Redirect(redirectUrl);
         }
 
         [HttpPost("payos-webhook")]
