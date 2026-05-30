@@ -259,8 +259,8 @@ namespace SacoStayAPI.Service
                 }).ToList();
 
             // 2. Thực hiện nghiệp vụ giới hạn phân quyền theo gói thiết kế (Mấu chốt logic)
-            var currentPackage = roomPost.PackageTier.ToUpper();
-            bool isLimited = currentPackage != "ELITE"; // Không phải gói ELITE thì bị bóp hiển thị còn 5 người
+            var currentPackage = (roomPost.PackageTier ?? "BASIC").ToUpperInvariant();
+            bool isLimited = currentPackage != "ELITE";
 
             var finalHistoryResult = isLimited ? queryHistory.Take(5).ToList() : queryHistory;
 

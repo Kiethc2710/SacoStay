@@ -437,7 +437,7 @@ namespace SacoStayAPI.Service
             var nextWeekStart = startOfWeek.AddDays(7);
 
             var isPremium = await IsTenantPremiumAsync(currentUserId);
-            var weeklyLimit = isPremium ? (int?)null : 10;
+            var weeklyLimit = isPremium ? (int?)null : 5;
 
             var usedThisWeek = (await _unitOfWork.Repository<UserSwipe>()
                 .FindAsync(s => s.SwiperId == currentUserId && s.CreatedAt >= startOfWeek)).Count();

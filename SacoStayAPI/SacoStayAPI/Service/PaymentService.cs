@@ -33,8 +33,10 @@ namespace SacoStayAPI.Service
             var roomPost = await _unitOfWork.Repository<RoomPost>().GetByIdAsync(roomPostId);
             if (roomPost == null) throw new ArgumentException("Bài đăng không tồn tại.");
 
-            var amount = GetLandlordPackageAmount(packageName);
-            return await CreatePaymentLinkAsync(amount, $"LANDLORD_{packageName.ToUpper()}", roomPostId, null, "Landlord");
+            var tier = ToLandlordTierCode(packageName);
+            var amount = GetLandlordPackageAmount(tier);
+            await CancelSupersededPendingLandlordPaymentsAsync(roomPostId);
+            return await CreatePaymentLinkAsync(amount, tier, roomPostId, null, "Landlord");
         }
 
         public async Task<string> CreateTenantPackagePaymentUrlAsync(Guid userId, string packageName)
@@ -121,7 +123,7 @@ namespace SacoStayAPI.Service
 
             var transactions = await _unitOfWork.Repository<PaymentTransaction>().FindAsync(t => t.OrderId == orderCode);
             var transaction = transactions.FirstOrDefault();
-            if (transaction == null) return;
+            if (transaction == null || transaction.Status == "Cancelled") return;
 
             if (status.Equals("PAID", StringComparison.OrdinalIgnoreCase) || status.Equals("success", StringComparison.OrdinalIgnoreCase))
             {
@@ -165,7 +167,7 @@ namespace SacoStayAPI.Service
 
             var transactions = await _unitOfWork.Repository<PaymentTransaction>().FindAsync(t => t.OrderId == orderCode);
             var transaction = transactions.FirstOrDefault();
-            if (transaction == null) return;
+            if (transaction == null || transaction.Status == "Cancelled") return;
 
             if (code == "00")
             {
@@ -173,8 +175,28 @@ namespace SacoStayAPI.Service
             }
         }
 
+        private async Task CancelSupersededPendingLandlordPaymentsAsync(Guid roomPostId)
+        {
+            var pending = (await _unitOfWork.Repository<PaymentTransaction>().FindAsync(
+                t => t.RoomPostId == roomPostId && t.Status == "Pending" && t.BuyerType == "Landlord")).ToList();
+
+            var changed = false;
+            foreach (var t in pending)
+            {
+                t.Status = "Cancelled";
+                _unitOfWork.Repository<PaymentTransaction>().Update(t);
+                changed = true;
+            }
+
+            if (changed)
+                await _unitOfWork.CompleteAsync();
+        }
+
         private async Task ApplySuccessAsync(PaymentTransaction transaction)
         {
+            if (transaction.Status == "Success") return;
+            if (transaction.Status == "Cancelled") return;
+
             transaction.Status = "Success";
 
             if (transaction.BuyerType == "Landlord" && transaction.RoomPostId.HasValue)
@@ -182,7 +204,7 @@ namespace SacoStayAPI.Service
                 var roomPost = await _unitOfWork.Repository<RoomPost>().GetByIdAsync(transaction.RoomPostId.Value);
                 if (roomPost != null)
                 {
-                    roomPost.PackageTier = transaction.PackageName ?? "LANDLORD_BASIC";
+                    roomPost.PackageTier = ToLandlordTierCode(transaction.PackageName);
                     if (roomPost.PackageExpiresAt.HasValue && roomPost.PackageExpiresAt > DateTime.UtcNow)
                         roomPost.PackageExpiresAt = roomPost.PackageExpiresAt.Value.AddDays(30);
                     else
@@ -209,14 +231,18 @@ namespace SacoStayAPI.Service
             await _unitOfWork.CompleteAsync();
         }
 
-        private static decimal GetLandlordPackageAmount(string packageName) => packageName.ToUpper() switch
+        private static decimal GetLandlordPackageAmount(string packageName)
         {
-            "BASIC" => 53000,
-            "LITE" => 295000,
-            "PRO" => 737500,
-            "ELITE" => 1475000,
-            _ => throw new ArgumentException("Gói landlord không hợp lệ.")
-        };
+            var tier = ToLandlordTierCode(packageName);
+            return tier switch
+            {
+                "BASIC" => 53000,
+                "LITE" => 295000,
+                "PRO" => 737500,
+                "ELITE" => 1475000,
+                _ => throw new ArgumentException("Gói landlord không hợp lệ.")
+            };
+        }
 
         private static decimal GetTenantPackageAmount(string packageName) => packageName.ToUpper() switch
         {
@@ -252,6 +278,15 @@ namespace SacoStayAPI.Service
 
         public Task<IEnumerable<TransactionHistoryDTO>> GetTransactionHistoryAsync(Guid userId)
             => GetTransactionHistoryInternalAsync(userId);
+
+        /// <summary>BASIC | LITE | PRO | ELITE — không dùng tiền tố LANDLORD_.</summary>
+        private static string ToLandlordTierCode(string? packageName)
+        {
+            var s = (packageName ?? "BASIC").Trim().ToUpperInvariant();
+            if (s.StartsWith("LANDLORD_", StringComparison.Ordinal))
+                s = s["LANDLORD_".Length..];
+            return s is "BASIC" or "LITE" or "PRO" or "ELITE" ? s : "BASIC";
+        }
 
         private static string CreateHmacSha256(string data, string secret)
         {

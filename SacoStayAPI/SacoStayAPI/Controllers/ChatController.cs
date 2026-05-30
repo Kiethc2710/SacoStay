@@ -37,5 +37,37 @@ namespace SacoStayAPI.Controllers
 
             return Ok(messages);
         }
+
+        /// <summary>Danh sách người đã từng nhắn tin (để hiển thị hội thoại, không phụ thuộc localStorage).</summary>
+        [HttpGet("conversations")]
+        public async Task<IActionResult> GetConversations()
+        {
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+            if (string.IsNullOrEmpty(userIdStr)) return Unauthorized();
+            if (!Guid.TryParse(userIdStr, out var currentUserId)) return Unauthorized();
+
+            var messages = await _context.ChatMessages
+                .Where(m => m.SenderId == currentUserId || m.ReceiverId == currentUserId)
+                .OrderByDescending(m => m.SentAt)
+                .ToListAsync();
+
+            var seen = new HashSet<Guid>();
+            var conversations = new List<object>();
+
+            foreach (var m in messages)
+            {
+                var otherId = m.SenderId == currentUserId ? m.ReceiverId : m.SenderId;
+                if (!seen.Add(otherId)) continue;
+                conversations.Add(new
+                {
+                    otherUserId = otherId.ToString(),
+                    lastMessage = m.Message,
+                    lastSentAt = m.SentAt
+                });
+            }
+
+            return Ok(conversations);
+        }
     }
 }

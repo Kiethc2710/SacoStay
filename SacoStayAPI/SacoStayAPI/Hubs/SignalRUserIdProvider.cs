@@ -9,8 +9,12 @@ namespace SacoStayAPI.Hubs
     /// </summary>
     public class SignalRUserIdProvider : IUserIdProvider
     {
-        public string? GetUserId(HubConnectionContext connection) =>
-            connection.User?.FindFirstValue(ClaimTypes.NameIdentifier)
-            ?? connection.User?.FindFirstValue(JwtRegisteredClaimNames.Sub);
+        public string? GetUserId(HubConnectionContext connection)
+        {
+            var raw = connection.User?.FindFirstValue(ClaimTypes.NameIdentifier)
+                ?? connection.User?.FindFirstValue(JwtRegisteredClaimNames.Sub);
+            if (string.IsNullOrWhiteSpace(raw)) return null;
+            return Guid.TryParse(raw, out var guid) ? guid.ToString() : raw.Trim();
+        }
     }
 }

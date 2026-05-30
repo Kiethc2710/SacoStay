@@ -17,25 +17,31 @@ namespace SacoStayAPI.Hubs
 
         public async Task SendPrivateMessage(string receiverId, string message)
         {
-            var senderId = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier)
+            var senderIdRaw = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier)
                          ?? Context.User?.FindFirstValue(JwtRegisteredClaimNames.Sub);
 
-            if (string.IsNullOrEmpty(senderId) || string.IsNullOrWhiteSpace(message)) return;
+            if (string.IsNullOrEmpty(senderIdRaw) || string.IsNullOrWhiteSpace(message)) return;
+            if (!Guid.TryParse(senderIdRaw, out var senderGuid) || !Guid.TryParse(receiverId, out var receiverGuid))
+                throw new HubException("Người nhận hoặc phiên đăng nhập không hợp lệ.");
+
+            var trimmed = message.Trim();
+            var senderKey = senderGuid.ToString();
+            var receiverKey = receiverGuid.ToString();
 
             var chatMsg = new ChatMessage
             {
                 Id = Guid.NewGuid(),
-                SenderId = Guid.Parse(senderId),
-                ReceiverId = Guid.Parse(receiverId),
-                Message = message.Trim(),
+                SenderId = senderGuid,
+                ReceiverId = receiverGuid,
+                Message = trimmed,
                 SentAt = DateTime.UtcNow
             };
 
             _context.ChatMessages.Add(chatMsg);
             await _context.SaveChangesAsync();
 
-            await Clients.User(receiverId).SendAsync("ReceiveMessage", senderId, message.Trim());
-            await Clients.Caller.SendAsync("ReceiveMessage", senderId, message.Trim());
+            await Clients.User(receiverKey).SendAsync("ReceiveMessage", senderKey, trimmed);
+            await Clients.Caller.SendAsync("ReceiveMessage", senderKey, trimmed);
         }
     }
 }
