@@ -81,6 +81,31 @@ namespace SacoStayAPI.Controllers
             catch (UnauthorizedAccessException ex) { return Forbid(); }
         }
 
+        [Authorize(AuthenticationSchemes = "Bearer")]
+        [HttpPut("{id}/status")]
+        public async Task<IActionResult> UpdateRoomStatus(Guid id, [FromBody] UpdateRoomPostStatusDTO dto)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            try
+            {
+                var result = await _roomPostService.UpdateRoomPostStatusAsync(id, Guid.Parse(userId), dto.Status);
+                var message = result.Status == "Active"
+                    ? "Đã bật hiển thị tin đăng."
+                    : "Đã ẩn tin đăng.";
+                return Ok(new { message, status = result.Status, id = result.Id });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
+        }
+
         // API xem chi tiết tin đăng trọ của khách hàng -> Tự động kích hoạt ghi nhận lịch sử xem tin
         [Authorize(AuthenticationSchemes = "Bearer")]
         [HttpPost("{id}/view")]

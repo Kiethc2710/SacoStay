@@ -172,6 +172,39 @@ namespace SacoStayAPI.Service
             await _unitOfWork.CompleteAsync();
         }
 
+        public async Task<RoomPost> UpdateRoomPostStatusAsync(Guid roomPostId, Guid userId, string status)
+        {
+            if (string.IsNullOrWhiteSpace(status))
+                throw new ArgumentException("Thiếu trạng thái (active hoặc inactive).");
+
+            var newStatus = NormalizeLandlordStatus(status);
+            if (newStatus == null)
+                throw new ArgumentException("Trạng thái không hợp lệ. Chỉ chấp nhận active hoặc inactive.");
+
+            var roomPost = await _unitOfWork.Repository<RoomPost>().GetByIdAsync(roomPostId);
+            if (roomPost == null)
+                throw new ArgumentException("Bài đăng không tồn tại.");
+
+            if (roomPost.UserId != userId)
+                throw new UnauthorizedAccessException("Bạn không có quyền thay đổi trạng thái tin đăng này.");
+
+            if (roomPost.Status != "Active" && roomPost.Status != "Hidden")
+                throw new ArgumentException("Chỉ có thể ẩn/hiện tin đã được duyệt (trạng thái Active hoặc Hidden).");
+
+            roomPost.Status = newStatus;
+            _unitOfWork.Repository<RoomPost>().Update(roomPost);
+            await _unitOfWork.CompleteAsync();
+            return roomPost;
+        }
+
+        private static string? NormalizeLandlordStatus(string status) =>
+            status.Trim().ToLowerInvariant() switch
+            {
+                "active" => "Active",
+                "inactive" or "hidden" => "Hidden",
+                _ => null
+            };
+
         public async Task<object> GetRoomAnalyticsAsync(Guid roomPostId, Guid userId)
         {
             var roomPost = await _unitOfWork.Repository<RoomPost>().GetByIdAsync(roomPostId);

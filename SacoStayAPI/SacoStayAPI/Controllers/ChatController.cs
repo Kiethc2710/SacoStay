@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SacoStayAPI.Data;
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 
 namespace SacoStayAPI.Controllers
@@ -17,7 +18,10 @@ namespace SacoStayAPI.Controllers
         [HttpGet("history/{otherUserId}")]
         public async Task<IActionResult> GetChatHistory(Guid otherUserId)
         {
-            var currentUserId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+            if (string.IsNullOrEmpty(userIdStr)) return Unauthorized();
+            var currentUserId = Guid.Parse(userIdStr);
 
             var messages = await _context.ChatMessages
                 .Where(m => (m.SenderId == currentUserId && m.ReceiverId == otherUserId) ||

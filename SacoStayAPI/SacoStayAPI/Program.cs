@@ -4,10 +4,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SacoStayAPI.Data;
+using SacoStayAPI.Hubs;
 using SacoStayAPI.Model.Entities;
 using SacoStayAPI.Repositories;
 using SacoStayAPI.Service;
 using SacoStayAPI.Services;
+using Microsoft.AspNetCore.SignalR;
 using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using Amazon.S3;
@@ -24,6 +26,7 @@ namespace SacoStayAPI
 
             builder.Services.AddControllers();
             builder.Services.AddSignalR();
+            builder.Services.AddSingleton<IUserIdProvider, SignalRUserIdProvider>();
             builder.Services.AddMemoryCache();
 
             // ---- AWS S3 Configuration (Đã sửa lỗi nạp đè credentials) ----
@@ -90,7 +93,11 @@ namespace SacoStayAPI
 
             // JWT Authentication
             var jwt = builder.Configuration.GetSection("Jwt");
-            builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            builder.Services.AddAuthentication(options =>
+            {
+                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+            })
                 .AddJwtBearer(options =>
                 {
                     // Giữ claim "role" từ JWT (tránh map sang URI dài khiến [Authorize(Roles = "admin")] 403).
@@ -106,20 +113,34 @@ namespace SacoStayAPI
                         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt["Key"])),
                         NameClaimType = JwtRegisteredClaimNames.Sub,
                         RoleClaimType = "role",
-                        ClockSkew = TimeSpan.Zero
+                        ClockSkew = TimeSpan.FromMinutes(1)
                     };
 
-                    // Cấu hình cho SignalR nhận Token từ Query String
+                    // SignalR: token qua query access_token (chuẩn) hoặc header Authorization (fallback)
                     options.Events = new JwtBearerEvents
                     {
                         OnMessageReceived = context =>
                         {
-                            var accessToken = context.Request.Query["access_token"];
-                            var path = context.HttpContext.Request.Path;
-                            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chatHub"))
+                            var path = context.Request.Path;
+                            if (!path.HasValue ||
+                                path.Value?.IndexOf("/chathub", StringComparison.OrdinalIgnoreCase) < 0)
+                            {
+                                return Task.CompletedTask;
+                            }
+
+                            var accessToken = context.Request.Query["access_token"].ToString();
+                            if (!string.IsNullOrEmpty(accessToken))
                             {
                                 context.Token = accessToken;
+                                return Task.CompletedTask;
                             }
+
+                            var authHeader = context.Request.Headers.Authorization.ToString();
+                            if (authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                            {
+                                context.Token = authHeader["Bearer ".Length..].Trim();
+                            }
+
                             return Task.CompletedTask;
                         }
                     };
