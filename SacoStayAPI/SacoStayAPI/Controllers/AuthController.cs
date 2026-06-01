@@ -72,6 +72,31 @@ namespace SacoStayAPI.Controllers
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
 
+        //[HttpPost("login")]
+        //public async Task<IActionResult> Login([FromBody] LoginDTO dto)
+        //{
+        //    Account user = null;
+        //    if (dto.EmailPhoneorUsername.Contains("@"))
+        //        user = await _userManager.FindByEmailAsync(dto.EmailPhoneorUsername);
+        //    else if (dto.EmailPhoneorUsername.All(char.IsDigit))
+        //    {
+        //        user = _userManager.Users.FirstOrDefault(u => u.PhoneNumber == dto.EmailPhoneorUsername);
+        //    }
+        //    else
+        //    {
+        //        user = await _userManager.FindByNameAsync(dto.EmailPhoneorUsername);
+        //    }
+        //    if (user == null) return Unauthorized("Invalid username/email");
+
+        //    var validPassword = await _userManager.CheckPasswordAsync(user, dto.Password);
+        //    if (!validPassword) return Unauthorized("Invalid password");
+
+        //    if (!await _userManager.IsEmailConfirmedAsync(user))
+        //        return Unauthorized("Email chưa được xác nhận");
+
+        //    var token = await GenerateJwtToken(user);
+        //    return Ok(new { token });
+        //}
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginDTO dto)
         {
@@ -86,14 +111,25 @@ namespace SacoStayAPI.Controllers
             {
                 user = await _userManager.FindByNameAsync(dto.EmailPhoneorUsername);
             }
+
+            // 1. Kiểm tra tài khoản tồn tại không
             if (user == null) return Unauthorized("Invalid username/email");
 
+            // 2. KIỂM TRA MẬT KHẨU TRƯỚC (Như bạn nói, phải đúng pass đã mới xử tiếp)
             var validPassword = await _userManager.CheckPasswordAsync(user, dto.Password);
             if (!validPassword) return Unauthorized("Invalid password");
 
+            // 3. MẬT KHẨU ĐÚNG RỒI -> BÂY GIỜ MỚI CHECK XEM CÓ BỊ BAN KHÔNG
+            if (await _userManager.IsLockedOutAsync(user))
+            {
+                return BadRequest(new { Message = "Tài khoản của bạn đã bị khóa vĩnh viễn do vi phạm nội quy." });
+            }
+
+            // 4. Kiểm tra các bước phụ khác
             if (!await _userManager.IsEmailConfirmedAsync(user))
                 return Unauthorized("Email chưa được xác nhận");
 
+            // 5. Cấp token vào nhà
             var token = await GenerateJwtToken(user);
             return Ok(new { token });
         }
