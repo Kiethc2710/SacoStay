@@ -22,5 +22,7 @@
 
     // Trạng thái xử lý (Pending, Reviewed, Resolved, Rejected)
     public string Status { get; set; } = "Pending";
-}
+        // THÊM DÒNG NÀY (Để lưu danh sách URL ảnh bằng chứng)
+        public List<string> Images { get; set; } = new List<string>();
+    }
 }

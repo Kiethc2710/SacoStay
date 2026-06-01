@@ -9,11 +9,11 @@ namespace SacoStayAPI.Service
     public class ReportService : IReportService
     {
         private readonly IUnitOfWork _unitOfWork;
-       
-        public ReportService(IUnitOfWork unitOfWork)
+        private readonly IPhotoService _photoService; // 1. KHAI BÁO THÊM PHOTOSERVICE
+        public ReportService(IUnitOfWork unitOfWork, IPhotoService photoService)
         {
             _unitOfWork = unitOfWork;
-
+            _photoService = photoService;   
         }
         public async Task<bool> SubmitReportAsync(CreateReportRequest request)
         {
@@ -21,6 +21,19 @@ namespace SacoStayAPI.Service
             if (request.ReportedUserId == null && request.ReportedRoomId == null)
             {
                 throw new ArgumentException("Phải chỉ định người dùng hoặc phòng bị report.");
+            }
+            var imageUrls = new List<string>();
+            if (request.Images != null && request.Images.Any())
+            {
+                foreach (var file in request.Images)
+                {
+                    if (file.Length > 0)
+                    {
+                        // Upload lên AWS S3 vào thư mục "reports"
+                        var url = await _photoService.UploadPhotoAsync(file, "reports");
+                        imageUrls.Add(url);
+                    }
+                }
             }
 
             // Có thể thêm logic kiểm tra User/Room có tồn tại trong DB không
@@ -63,13 +76,15 @@ namespace SacoStayAPI.Service
                 .Select(r => new ReportResponseDTO
                 {
                     ReportId = r.ReportId,
+                    //Images = r.Images,
                     ReporterName = r.Reporter != null ? r.Reporter.UserName : "Unknown",
                     ReportedUserName = r.ReportedUser != null ? r.ReportedUser.UserName : null,
                     ReportedRoomName = r.ReportedRoom != null ? r.ReportedRoom.Title : null,
                     Reason = r.Reason,
                     Description = r.Description,
                     Status = r.Status,
-                    CreatedAt = r.CreatedAt
+                    CreatedAt = r.CreatedAt,
+                    Images = r.Images
                 })
                 .ToListAsync();
 

@@ -16,7 +16,7 @@ namespace SacoStayAPI.Controllers
             _reportService = reportService;
         }
         [HttpPost]
-        public async Task<IActionResult> CreateReport([FromBody] CreateReportRequest request)
+        public async Task<IActionResult> CreateReport([FromForm] CreateReportRequest request)
         {
             try
             {
@@ -28,6 +28,7 @@ namespace SacoStayAPI.Controllers
                 if (success)
                 {
                     return Ok(new { Message = "Gửi report thành công. Quản trị viên sẽ xem xét." });
+                    Console.WriteLine($"SỐ ẢNH NHẬN ĐƯỢC: {request.Images?.Count ?? 0}");
                 }
 
                 return BadRequest(new { Message = "Không thể lưu report." });

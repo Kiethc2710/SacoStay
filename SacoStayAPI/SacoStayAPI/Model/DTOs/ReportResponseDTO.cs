@@ -10,5 +10,6 @@
         public string Description { get; set; }
         public string Status { get; set; }
         public DateTime CreatedAt { get; set; }
+        public List<string>? Images { get; set; } // THÊM DÒNG NÀY
     }
 }
