@@ -51,6 +51,7 @@ namespace SacoStayAPI.Service
                 Reason = request.Reason,
                 Description = request.Description,
                 CreatedAt = DateTime.UtcNow,
+                Images = imageUrls,
                 Status = "Pending"
             };
 
