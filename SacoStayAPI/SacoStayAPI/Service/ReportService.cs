@@ -1,4 +1,6 @@
-﻿using SacoStayAPI.Model.DTOs;
+﻿using Microsoft.EntityFrameworkCore;
+using SacoStayAPI.Data;
+using SacoStayAPI.Model.DTOs;
 using SacoStayAPI.Model.Entities;
 using SacoStayAPI.Repositories;
 
@@ -7,10 +9,11 @@ namespace SacoStayAPI.Service
     public class ReportService : IReportService
     {
         private readonly IUnitOfWork _unitOfWork;
-
+       
         public ReportService(IUnitOfWork unitOfWork)
         {
             _unitOfWork = unitOfWork;
+
         }
         public async Task<bool> SubmitReportAsync(CreateReportRequest request)
         {
@@ -45,6 +48,32 @@ namespace SacoStayAPI.Service
             var result = await _unitOfWork.CompleteAsync();
 
             return result > 0;
+        }
+        public async Task<IEnumerable<ReportResponseDTO>> GetListReportsAsync()
+        {
+            // 1. Lấy IQueryable từ UoW ( KHÔNG CÓ AWAIT Ở ĐÂY )
+            var query = _unitOfWork.Repository<Report>().GetQueryable();
+
+            // 2. Thực hiện Include, Select và ToListAsync ( CÓ AWAIT Ở ĐÂY )
+            var reports = await query
+                .Include(r => r.Reporter)
+                .Include(r => r.ReportedUser)
+                .Include(r => r.ReportedRoom)
+                .OrderByDescending(r => r.CreatedAt)
+                .Select(r => new ReportResponseDTO
+                {
+                    ReportId = r.ReportId,
+                    ReporterName = r.Reporter != null ? r.Reporter.UserName : "Unknown",
+                    ReportedUserName = r.ReportedUser != null ? r.ReportedUser.UserName : null,
+                    ReportedRoomName = r.ReportedRoom != null ? r.ReportedRoom.Title : null,
+                    Reason = r.Reason,
+                    Description = r.Description,
+                    Status = r.Status,
+                    CreatedAt = r.CreatedAt
+                })
+                .ToListAsync();
+
+            return reports;
         }
     }
 }

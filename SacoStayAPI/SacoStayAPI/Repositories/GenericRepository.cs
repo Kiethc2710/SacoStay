@@ -46,5 +46,9 @@ namespace SacoStayAPI.Repositories
         {
             _dbSet.Remove(entity);
         }
+        public IQueryable<T> GetQueryable()
+        {
+            return _context.Set<T>().AsQueryable();
+        }
     }
 }

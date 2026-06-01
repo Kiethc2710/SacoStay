@@ -42,5 +42,25 @@ namespace SacoStayAPI.Controllers
                 return StatusCode(500, new { Message = "Đã xảy ra lỗi hệ thống." });
             }
         }
+        [HttpGet]
+        public async Task<IActionResult> GetListReport() // Nhớ thêm dấu () nhé
+        {
+            try
+            {
+                var reports = await _reportService.GetListReportsAsync();
+
+                if (reports == null || !reports.Any())
+                {
+                    return Ok(new { Message = "Chưa có báo cáo nào.", Data = new List<object>() });
+                }
+
+                return Ok(new { Message = "Lấy danh sách thành công", Data = reports });
+            }
+            catch (Exception ex)
+            {
+                // Log lỗi ex.Message ở đây nếu hệ thống có thư viện log
+                return StatusCode(500, new { Message = "Đã xảy ra lỗi khi lấy danh sách báo cáo." });
+            }
+        }
     }
 }

@@ -10,5 +10,7 @@ namespace SacoStayAPI.Repositories
         Task AddAsync(T entity);
         void Update(T entity);
         void Remove(T entity);
+        // THÊM HÀM NÀY:
+        IQueryable<T> GetQueryable();
     }
 }
