@@ -107,7 +107,7 @@ namespace SacoStayAPI
                         ValidateIssuerSigningKey = true,
                         ValidIssuer = jwt["Issuer"],
                         ValidAudience = jwt["Audience"],
-                        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt["Key"])),
+                        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt["Key"] ?? string.Empty)),
                         NameClaimType = JwtRegisteredClaimNames.Sub,
                         RoleClaimType = "role",
                         ClockSkew = TimeSpan.Zero
@@ -136,9 +136,14 @@ namespace SacoStayAPI
             var allowedOrigins = new[]
             {
                 frontendBaseUrl.TrimEnd('/'),
+                builder.Configuration["Frontend:SecondaryBaseUrl"]?.TrimEnd('/'),
                 "http://localhost:4200",
                 "https://localhost:4200"
-            }.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            }
+            .Where(origin => !string.IsNullOrWhiteSpace(origin))
+            .Select(origin => origin!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
             builder.Services.AddCors(options =>
             {
