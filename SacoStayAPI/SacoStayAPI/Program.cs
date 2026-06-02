@@ -131,14 +131,22 @@ namespace SacoStayAPI
 
             builder.Services.AddAuthorization();
 
-            // CORS cho Angular
+            // CORS cho Angular production/local
+            var frontendBaseUrl = builder.Configuration["Frontend:BaseUrl"] ?? "http://localhost:4200";
+            var allowedOrigins = new[]
+            {
+                frontendBaseUrl.TrimEnd('/'),
+                "http://localhost:4200",
+                "https://localhost:4200"
+            }.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+
             builder.Services.AddCors(options =>
             {
-                options.AddPolicy("AllowAll", policy =>
+                options.AddPolicy("AllowFrontend", policy =>
                 {
-                    policy.AllowAnyHeader()
+                    policy.WithOrigins(allowedOrigins)
+                          .AllowAnyHeader()
                           .AllowAnyMethod()
-                          .SetIsOriginAllowed(_ => true)
                           .AllowCredentials();
                 });
             });
@@ -162,7 +170,7 @@ namespace SacoStayAPI
             app.UseHttpsRedirection();
 
             // Sử dụng CORS trước Routing/Auth
-            app.UseCors("AllowAll");
+            app.UseCors("AllowFrontend");
 
             app.UseRouting();
 
