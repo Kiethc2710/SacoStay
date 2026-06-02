@@ -43,10 +43,22 @@ namespace SacoStayAPI.Service
                 throw new ArgumentException("Người thực hiện report không tồn tại.");
             }
 
+            Guid? reportedUserId = request.ReportedUserId;
+            if (request.ReportedRoomId.HasValue)
+            {
+                var room = await _unitOfWork.Repository<RoomPost>().GetByIdAsync(request.ReportedRoomId.Value);
+                if (room == null)
+                {
+                    throw new ArgumentException("Tin phòng trọ không tồn tại.");
+                }
+                // Báo cáo phòng: lưu luôn chủ trọ (UserId của tin) để admin/DB thấy ReportedUserId.
+                reportedUserId = room.UserId;
+            }
+
             var report = new Report
             {
                 ReporterId = request.ReporterId,
-                ReportedUserId = request.ReportedUserId,
+                ReportedUserId = reportedUserId,
                 ReportedRoomId = request.ReportedRoomId,
                 Reason = request.Reason,
                 Description = request.Description,
@@ -68,28 +80,50 @@ namespace SacoStayAPI.Service
             // 1. Lấy IQueryable từ UoW ( KHÔNG CÓ AWAIT Ở ĐÂY )
             var query = _unitOfWork.Repository<Report>().GetQueryable();
 
-            // 2. Thực hiện Include, Select và ToListAsync ( CÓ AWAIT Ở ĐÂY )
             var reports = await query
                 .Include(r => r.Reporter)
                 .Include(r => r.ReportedUser)
                 .Include(r => r.ReportedRoom)
                 .OrderByDescending(r => r.CreatedAt)
-                .Select(r => new ReportResponseDTO
+                .ToListAsync();
+
+            var ownerIds = reports
+                .Where(r => r.ReportedUser == null && r.ReportedRoom != null)
+                .Select(r => r.ReportedRoom!.UserId)
+                .Distinct()
+                .ToList();
+
+            var ownerNames = ownerIds.Count == 0
+                ? new Dictionary<Guid, string>()
+                : await _unitOfWork.Repository<Account>().GetQueryable()
+                    .Where(a => ownerIds.Contains(a.Id))
+                    .ToDictionaryAsync(a => a.Id, a => a.UserName ?? a.Email ?? "—");
+
+            return reports.Select(r =>
+            {
+                var roomOwnerId = r.ReportedRoom?.UserId;
+                var resolvedUserId = r.ReportedUserId ?? roomOwnerId;
+                string? resolvedUserName = r.ReportedUser?.UserName;
+                if (string.IsNullOrWhiteSpace(resolvedUserName) && roomOwnerId.HasValue && ownerNames.TryGetValue(roomOwnerId.Value, out var ownerName))
+                {
+                    resolvedUserName = ownerName;
+                }
+
+                return new ReportResponseDTO
                 {
                     ReportId = r.ReportId,
-                    //Images = r.Images,
                     ReporterName = r.Reporter != null ? r.Reporter.UserName : "Unknown",
-                    ReportedUserName = r.ReportedUser != null ? r.ReportedUser.UserName : null,
+                    ReportedUserId = resolvedUserId,
+                    ReportedUserName = resolvedUserName,
+                    ReportedRoomId = r.ReportedRoomId,
                     ReportedRoomName = r.ReportedRoom != null ? r.ReportedRoom.Title : null,
                     Reason = r.Reason,
                     Description = r.Description,
                     Status = r.Status,
                     CreatedAt = r.CreatedAt,
                     Images = r.Images
-                })
-                .ToListAsync();
-
-            return reports;
+                };
+            }).ToList();
         }
     }
 }

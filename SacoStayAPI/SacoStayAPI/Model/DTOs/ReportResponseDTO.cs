@@ -4,7 +4,9 @@
     {
         public Guid ReportId { get; set; }
         public string ReporterName { get; set; }
+        public Guid? ReportedUserId { get; set; }
         public string? ReportedUserName { get; set; }
+        public Guid? ReportedRoomId { get; set; }
         public string? ReportedRoomName { get; set; }
         public string Reason { get; set; }
         public string Description { get; set; }

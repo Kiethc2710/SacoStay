@@ -7,6 +7,7 @@ using SacoStayAPI.Model.Entities;
 using SacoStayAPI.Repositories;
 using SacoStayAPI.Service;
 using SacoStayAPI.Services;
+using System.Net;
 using System.Security.Claims;
 
 namespace SacoStayAPI.Controllers
@@ -169,105 +170,166 @@ namespace SacoStayAPI.Controllers
         [Authorize(AuthenticationSchemes = "Bearer", Roles = "admin")]
         [HttpPost("reports/{id}/process")]
         public async Task<IActionResult> ProcessReport(
-                    Guid id,
-                    [FromBody] ProcessReportRequest request,
-                    [FromServices] EmailService _emailService) // Inject EmailService trực tiếp vào hàm
+            Guid id,
+            [FromBody] ProcessReportRequest request,
+            [FromServices] EmailService emailService)
         {
-            // 1. Lấy report lên cùng với dữ liệu Phòng và Người bị report
-            var report = await _unitOfWork.Repository<Report>().GetByIdAsync(id);
-                //.Include(r => r.ReportedRoom)
-                //.Include(r => r.ReportedUser)
-                //.FirstOrDefaultAsync(r => r.ReporterId == id);
+            var report = await _unitOfWork.Repository<Report>().GetQueryable()
+                .Include(r => r.ReportedRoom)
+                .Include(r => r.ReportedUser)
+                .FirstOrDefaultAsync(r => r.ReportId == id);
 
             if (report == null)
-                return NotFound(new { Message = "Không tìm thấy báo cáo." });
+                return NotFound(new { message = "Không tìm thấy báo cáo." });
 
-            if (report.Status != "Pending")
-                return BadRequest(new { Message = "Báo cáo này đã được xử lý rồi." });
+            if (!string.Equals(report.Status, "Pending", StringComparison.OrdinalIgnoreCase))
+                return BadRequest(new { message = "Báo cáo này đã được xử lý rồi." });
 
-            // =========================================================
-            // TRƯỜNG HỢP 1: REPORT SAI SỰ THẬT (REJECT)
-            // =========================================================
             if (!request.IsValid)
             {
                 report.Status = "Rejected";
                 _unitOfWork.Repository<Report>().Update(report);
                 await _unitOfWork.CompleteAsync();
-                return Ok(new { Message = "Đã từ chối báo cáo. Không có hình phạt nào được áp dụng." });
+                return Ok(new { message = "Đã từ chối báo cáo. Không áp dụng hình phạt cho chủ trọ / người bị báo cáo." });
             }
 
-            // =========================================================
-            // TRƯỜNG HỢP 2: REPORT ĐÚNG SỰ THẬT (APPROVE)
-            // =========================================================
             report.Status = "Approved";
-            Guid? violatorId = null; // ID của người vi phạm
+            Guid? violatorId = null;
+            Guid? hiddenRoomId = null;
+            string? hiddenRoomTitle = null;
 
-            // A. Nếu report liên quan đến Phòng đăng
-            if (report.ReportedRoomId != null && report.ReportedRoom != null)
+            if (report.ReportedRoomId.HasValue)
             {
-                // Ẩn bài đăng
-                report.ReportedRoom.Status = "Hidden";
-
-                // Update bài đăng vào DB
-                _unitOfWork.Repository<RoomPost>().Update(report.ReportedRoom);
-
-                // Người bị phạt chính là chủ cái phòng này
-                violatorId = report.ReportedRoom.UserId;
+                var room = report.ReportedRoom
+                    ?? await _unitOfWork.Repository<RoomPost>().GetByIdAsync(report.ReportedRoomId.Value);
+                if (room != null)
+                {
+                    room.Status = "Hidden";
+                    _unitOfWork.Repository<RoomPost>().Update(room);
+                    violatorId = room.UserId;
+                    hiddenRoomId = room.Id;
+                    hiddenRoomTitle = room.Title;
+                }
             }
-            // B. Nếu report thẳng vào User
-            else if (report.ReportedUserId != null)
+            else if (report.ReportedUserId.HasValue)
             {
                 violatorId = report.ReportedUserId;
             }
 
-            // =========================================================
-            // TRƯỜNG HỢP 3: XỬ LÝ VI PHẠM (CẢNH CÁO / KHÓA ACC)
-            // =========================================================
+            _unitOfWork.Repository<Report>().Update(report);
+            await _unitOfWork.CompleteAsync();
+
             if (violatorId.HasValue)
             {
                 var violator = await _userManager.FindByIdAsync(violatorId.Value.ToString());
                 if (violator != null)
                 {
-                    // Đếm xem người này (hoặc phòng của người này) đã từng bị report Approved bao nhiêu lần
-                    var previousViolationsCount = await _unitOfWork.Repository<Report>().GetQueryable()
-                        .CountAsync(r => r.Status == "Approved" &&
-                                        (r.ReportedUserId == violator.Id ||
-                                        (r.ReportedRoom != null && r.ReportedRoom.UserId == violator.Id)));
+                    var landlordRoomIds = await _unitOfWork.Repository<RoomPost>().GetQueryable()
+                        .Where(p => p.UserId == violator.Id)
+                        .Select(p => p.Id)
+                        .ToListAsync();
 
-                    int totalViolations = previousViolationsCount + 1; // Cộng thêm lần hiện tại
+                    var previousApproved = await _unitOfWork.Repository<Report>().GetQueryable()
+                        .CountAsync(r =>
+                            r.ReportId != report.ReportId &&
+                            r.Status == "Approved" &&
+                            (r.ReportedUserId == violator.Id ||
+                             (r.ReportedRoomId != null && landlordRoomIds.Contains(r.ReportedRoomId.Value))));
 
-                    if (totalViolations == 1)
+                    var totalViolations = previousApproved + 1;
+
+                    var displayName = !string.IsNullOrWhiteSpace(violator.FirstName)
+                        ? $"{violator.FirstName.Trim()} {violator.LastName?.Trim()}".Trim()
+                        : (violator.UserName ?? "bạn");
+                    var reasonText = string.IsNullOrWhiteSpace(report.Reason)
+                        ? "Vi phạm nội quy SacoStay"
+                        : report.Reason.Replace(";", ", ");
+                    var reasonHtml = WebUtility.HtmlEncode(reasonText);
+                    var roomEmailNote = hiddenRoomTitle != null
+                        ? $"<br>Tin \"{WebUtility.HtmlEncode(hiddenRoomTitle)}\" đã bị ẩn."
+                        : "";
+                    var roomNotifyNote = hiddenRoomTitle != null
+                        ? $" Tin \"{hiddenRoomTitle}\" đã bị ẩn."
+                        : "";
+                    var deterrence = GetReportDeterrenceLine(report.Reason);
+
+                    var notifyLink = hiddenRoomId.HasValue
+                        ? $"/owner/my-posts?roomPostId={hiddenRoomId}"
+                        : "/landlord-profile";
+
+                    await _notificationDispatcher.NotifyAsync(
+                        violator.Id,
+                        "Cảnh báo — yêu cầu không tái phạm",
+                        $"Báo cáo về bạn đã được xác minh.{roomNotifyNote} Lý do: {reasonText}. {deterrence}",
+                        "system",
+                        notifyLink);
+
+                    if (!string.IsNullOrWhiteSpace(violator.Email))
                     {
-                        // Vi phạm Lần 1: Gửi cảnh báo
-                        var subject = "Cảnh báo vi phạm nội quy SacoStay";
-                        var body = $"Chào {violator.FirstName},<br><br>" +
-                                   $"Chúng tôi nhận được báo cáo vi phạm hợp lệ liên quan đến tài khoản hoặc bài đăng của bạn. " +
-                                   $"Bài đăng vi phạm (nếu có) đã bị ẩn.<br><br>" +
-                                   $"<b>Lưu ý:</b> Nếu bạn vi phạm thêm 1 lần nữa, tài khoản của bạn sẽ bị khóa vĩnh viễn.";
-
-                        await _emailService.SendEmailAsync(violator.Email, subject, body);
-                    }
-                    else if (totalViolations >= 2)
-                    {
-                        // Vi phạm Lần 2: Ban vĩnh viễn bằng tính năng Lockout của Identity
-                        await _userManager.SetLockoutEnabledAsync(violator, true);
-                        await _userManager.SetLockoutEndDateAsync(violator, DateTimeOffset.MaxValue);
-
-                        var subject = "Tài khoản của bạn đã bị khóa vĩnh viễn";
-                        var body = $"Chào {violator.FirstName},<br><br>" +
-                                   $"Tài khoản của bạn đã vi phạm nội quy hệ thống nhiều lần và đã bị khóa vĩnh viễn. " +
-                                   $"Bạn sẽ không thể đăng nhập hoặc sử dụng dịch vụ của chúng tôi nữa.";
-
-                        await _emailService.SendEmailAsync(violator.Email, subject, body);
+                        try
+                        {
+                            var nameHtml = WebUtility.HtmlEncode(displayName);
+                            if (totalViolations >= 2)
+                            {
+                                await _userManager.SetLockoutEnabledAsync(violator, true);
+                                await _userManager.SetLockoutEndDateAsync(violator, DateTimeOffset.MaxValue);
+                                await emailService.SendEmailAsync(
+                                    violator.Email,
+                                    "Tài khoản SacoStay đã bị khóa",
+                                    $"Chào {nameHtml},<br><br>" +
+                                    $"Báo cáo mới về tài khoản/tin đăng của bạn đã được chấp nhận. <b>Lý do:</b> {reasonHtml}.{roomEmailNote}<br><br>" +
+                                    $"{deterrence}<br><br>" +
+                                    "Do tái phạm sau cảnh báo trước, tài khoản đã bị <b>khóa vĩnh viễn</b> — bạn không thể đăng nhập.<br><br>" +
+                                    "SacoStay không tiết lộ thông tin người báo cáo.<br><br>Trân trọng,<br>SacoStay");
+                            }
+                            else
+                            {
+                                await emailService.SendEmailAsync(
+                                    violator.Email,
+                                    "Cảnh báo vi phạm — SacoStay",
+                                    $"Chào {nameHtml},<br><br>" +
+                                    $"Chúng tôi đã xác minh báo cáo về tài khoản/tin đăng của bạn là hợp lệ. <b>Lý do:</b> {reasonHtml}.{roomEmailNote}<br><br>" +
+                                    $"{deterrence}<br><br>" +
+                                    "Vui lòng sửa hoặc gỡ nội dung vi phạm và tuân thủ điều khoản. Vi phạm thêm có thể bị <b>khóa tài khoản vĩnh viễn</b>.<br><br>" +
+                                    "Chúng tôi không công bố thông tin người báo cáo.<br><br>Trân trọng,<br>SacoStay");
+                            }
+                        }
+                        catch
+                        {
+                            // Email lỗi (SMTP) không chặn xử lý báo cáo — admin vẫn nhận OK, user vẫn có thông báo in-app.
+                        }
                     }
                 }
             }
 
-            // 4. Lưu tất cả thay đổi (Report & RoomPost) vào Database
-            _unitOfWork.Repository<Report>().Update(report);
-            await _unitOfWork.CompleteAsync();
+            return Ok(new
+            {
+                message = "Đã chấp nhận báo cáo. Tin vi phạm (nếu có) đã ẩn; chủ trọ đã được cảnh báo.",
+                status = report.Status
+            });
+        }
 
-            return Ok(new { Message = "Đã duyệt báo cáo thành công và áp dụng hình phạt tương ứng." });
+        /// <summary>Một dòng nhắc nhở theo lý do báo cáo (không lộ người báo cáo).</summary>
+        private static string GetReportDeterrenceLine(string? reason)
+        {
+            var r = reason ?? "";
+            if (r.Contains("Lừa đảo", StringComparison.OrdinalIgnoreCase) ||
+                r.Contains("Scam", StringComparison.OrdinalIgnoreCase))
+                return "Không được lừa đảo, thu tiền trước hoặc mô tả sai — vi phạm sẽ bị xử lý nghiêm.";
+            if (r.Contains("quấy rối", StringComparison.OrdinalIgnoreCase))
+                return "Quấy rối người dùng khác bị cấm; tái phạm có thể khóa tài khoản.";
+            if (r.Contains("giả mạo", StringComparison.OrdinalIgnoreCase))
+                return "Hồ sơ/ảnh giả mạo không được phép trên SacoStay.";
+            if (r.Contains("sai lệch", StringComparison.OrdinalIgnoreCase) ||
+                r.Contains("không đúng", StringComparison.OrdinalIgnoreCase) ||
+                r.Contains("minh bạch", StringComparison.OrdinalIgnoreCase))
+                return "Thông tin tin đăng phải đúng sự thật (giá, ảnh, địa chỉ).";
+            if (r.Contains("Spam", StringComparison.OrdinalIgnoreCase) ||
+                r.Contains("Quảng cáo", StringComparison.OrdinalIgnoreCase))
+                return "Không spam tin hoặc quảng cáo trái phép.";
+            if (r.Contains("không phù hợp", StringComparison.OrdinalIgnoreCase))
+                return "Nội dung khiêu dâm, bạo lực hoặc gây shock sẽ bị gỡ.";
+            return "Vui lòng rà soát lại tin đăng và hành vi trên nền tảng.";
         }
     }
 }
