@@ -23,8 +23,9 @@ namespace SacoStayAPI.Service
             if (files == null || files.Count == 0)
                 throw new ArgumentException("Vui lòng chọn ít nhất 1 ảnh.");
 
-            if (files.Count > 10)
-                throw new ArgumentException("Bạn chỉ được upload tối đa 10 ảnh profile.");
+            var currentCount = account.ProfileImages?.Count ?? 0;
+            if (currentCount + files.Count > 5)
+                throw new ArgumentException("Tổng số ảnh profile không được vượt quá 5 ảnh.");
 
             account.ProfileImages ??= new List<string>();
             var uploaded = new List<string>();
