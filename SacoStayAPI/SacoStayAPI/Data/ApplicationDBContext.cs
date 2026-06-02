@@ -21,6 +21,7 @@ namespace SacoStayAPI.Data
         public DbSet<RoomPost> RoomPosts { get; set; }
         public DbSet<RoomViewHistory> RoomViewHistories { get; set; }
         public DbSet<Notification> Notifications { get; set; }
+        public DbSet<Report> Reports { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder); // đừng quên gọi base để Identity hoạt động đúng
