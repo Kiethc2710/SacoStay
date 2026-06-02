@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.SignalR;
 using SacoStayAPI.Data;
 using SacoStayAPI.Model.Entities;
+using SacoStayAPI.Service;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 
@@ -12,8 +13,13 @@ namespace SacoStayAPI.Hubs
     public class ChatHub : Hub
     {
         private readonly ApplicationDBContext _context;
+        private readonly INotificationDispatcher _notificationDispatcher;
 
-        public ChatHub(ApplicationDBContext context) => _context = context;
+        public ChatHub(ApplicationDBContext context, INotificationDispatcher notificationDispatcher)
+        {
+            _context = context;
+            _notificationDispatcher = notificationDispatcher;
+        }
 
         public async Task SendPrivateMessage(string receiverId, string message)
         {
@@ -42,6 +48,17 @@ namespace SacoStayAPI.Hubs
 
             await Clients.User(receiverKey).SendAsync("ReceiveMessage", senderKey, trimmed);
             await Clients.Caller.SendAsync("ReceiveMessage", senderKey, trimmed);
+
+            var senderName = Context.User?.Identity?.Name ?? senderKey;
+            var title = "Tin nhắn mới";
+            var messagePreview = trimmed.Length > 80 ? trimmed[..80] + "..." : trimmed;
+            await _notificationDispatcher.NotifyAsync(
+                receiverGuid,
+                title,
+                $"{senderName}: {messagePreview}",
+                "chat",
+                $"/chat/{senderKey}"
+            );
         }
     }
 }

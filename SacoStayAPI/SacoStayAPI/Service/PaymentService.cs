@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using SacoStayAPI.Model.DTOs;
@@ -20,12 +20,14 @@ namespace SacoStayAPI.Service
         private readonly IUnitOfWork _unitOfWork;
         private readonly IConfiguration _configuration;
         private readonly ILogger<PaymentService> _logger;
+        private readonly INotificationDispatcher _notificationDispatcher;
 
-        public PaymentService(IUnitOfWork unitOfWork, IConfiguration configuration, ILogger<PaymentService> logger)
+        public PaymentService(IUnitOfWork unitOfWork, IConfiguration configuration, ILogger<PaymentService> logger, INotificationDispatcher notificationDispatcher)
         {
             _unitOfWork = unitOfWork;
             _configuration = configuration;
             _logger = logger;
+            _notificationDispatcher = notificationDispatcher;
         }
 
         public async Task<string> CreatePackagePaymentUrlAsync(Guid roomPostId, string packageName)
@@ -212,6 +214,13 @@ namespace SacoStayAPI.Service
 
                     roomPost.Status = "PendingApproval";
                     _unitOfWork.Repository<RoomPost>().Update(roomPost);
+
+                    await _notificationDispatcher.NotifyAsync(
+                        roomPost.UserId,
+                        "Thanh toán gói thành công",
+                        $"Bài đăng '{roomPost.Title}' đã thanh toán thành công và đang chờ admin duyệt.",
+                        "payment",
+                        $"/owner/my-posts?payment=success&roomPostId={roomPost.Id}");
                 }
             }
             else if (transaction.BuyerType == "Tenant" && transaction.UserId.HasValue)
@@ -224,6 +233,13 @@ namespace SacoStayAPI.Service
                         ? account.TenantPackageExpiresAt.Value.AddDays(30)
                         : DateTime.UtcNow.AddDays(30);
                     _unitOfWork.Repository<Account>().Update(account);
+
+                    await _notificationDispatcher.NotifyAsync(
+                        account.Id,
+                        "Nâng cấp Premium thành công",
+                        "Tài khoản của bạn đã được nâng cấp Premium thành công.",
+                        "payment",
+                        "/membership?payment=success");
                 }
             }
 

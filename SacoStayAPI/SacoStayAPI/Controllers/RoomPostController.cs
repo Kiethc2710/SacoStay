@@ -1,4 +1,4 @@
-﻿using Amazon.S3.Model;
+using Amazon.S3.Model;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SacoStayAPI.Model.DTOs;
@@ -135,7 +135,6 @@ namespace SacoStayAPI.Controllers
             }
         }
 
-        // API xem chi tiết tin đăng trọ của khách hàng -> Tự động kích hoạt ghi nhận lịch sử xem tin
         [Authorize(AuthenticationSchemes = "Bearer")]
         [HttpPost("{id}/view")]
         public async Task<IActionResult> TriggerViewRoom(Guid id)
@@ -146,5 +145,6 @@ namespace SacoStayAPI.Controllers
             await _roomPostService.RecordViewAsync(id, Guid.Parse(userId));
             return Ok();
         }
+
     }
 }

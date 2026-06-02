@@ -20,7 +20,7 @@ namespace SacoStayAPI.Data
         public DbSet<UserSwipe> UserSwipes { get; set; }
         public DbSet<RoomPost> RoomPosts { get; set; }
         public DbSet<RoomViewHistory> RoomViewHistories { get; set; }
-        public DbSet<Report> Reports { get; set; }
+        public DbSet<Notification> Notifications { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder); // đừng quên gọi base để Identity hoạt động đúng
@@ -40,6 +40,11 @@ namespace SacoStayAPI.Data
                       .WithMany()
                       .HasForeignKey(m => m.SenderId)
                       .OnDelete(DeleteBehavior.Restrict); // Không xóa tin nhắn khi xóa user để giữ lịch sử chat
+            });
+            modelBuilder.Entity<Notification>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => new { e.UserId, e.IsRead, e.CreatedAt });
             });
             ////Seed roles với GUID cố định
             //var adminRoleId = Guid.Parse("11111111-1111-1111-1111-111111111111");

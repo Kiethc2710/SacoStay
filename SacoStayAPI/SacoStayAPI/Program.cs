@@ -4,15 +4,14 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SacoStayAPI.Data;
-using SacoStayAPI.Hubs;
 using SacoStayAPI.Model.Entities;
 using SacoStayAPI.Repositories;
 using SacoStayAPI.Service;
 using SacoStayAPI.Services;
-using Microsoft.AspNetCore.SignalR;
 using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using Amazon.S3;
+using SacoStayAPI.Hubs;
 
 namespace SacoStayAPI
 {
@@ -26,7 +25,6 @@ namespace SacoStayAPI
 
             builder.Services.AddControllers();
             builder.Services.AddSignalR();
-            builder.Services.AddSingleton<IUserIdProvider, SignalRUserIdProvider>();
             builder.Services.AddMemoryCache();
 
             // ---- AWS S3 Configuration (Đã sửa lỗi nạp đè credentials) ----
@@ -42,16 +40,16 @@ namespace SacoStayAPI
             builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
             builder.Services.AddScoped<EmailService>();
             builder.Services.AddScoped<IPhotoService, PhotoService>();
+            builder.Services.AddScoped<IUserProfileService, UserProfileService>();
 
             builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
             builder.Services.AddScoped<IPaymentService, PaymentService>();
 
             builder.Services.AddScoped<ILifestyleRepository, LifestyleRepository>();
             builder.Services.AddScoped<LifestyleService>();
-             
+            builder.Services.AddScoped<INotificationService, NotificationService>();
+            builder.Services.AddScoped<INotificationDispatcher, NotificationDispatcher>();
             builder.Services.AddScoped<IRoomPostService, RoomPostService>();
-            builder.Services.AddScoped<IReportService, ReportService>();
-
             // Swagger + Bearer 
             builder.Services.AddSwaggerGen(c =>
             {
@@ -95,11 +93,7 @@ namespace SacoStayAPI
 
             // JWT Authentication
             var jwt = builder.Configuration.GetSection("Jwt");
-            builder.Services.AddAuthentication(options =>
-            {
-                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-            })
+            builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(options =>
                 {
                     // Giữ claim "role" từ JWT (tránh map sang URI dài khiến [Authorize(Roles = "admin")] 403).
@@ -115,34 +109,20 @@ namespace SacoStayAPI
                         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt["Key"])),
                         NameClaimType = JwtRegisteredClaimNames.Sub,
                         RoleClaimType = "role",
-                        ClockSkew = TimeSpan.FromMinutes(1)
+                        ClockSkew = TimeSpan.Zero
                     };
 
-                    // SignalR: token qua query access_token (chuẩn) hoặc header Authorization (fallback)
+                    // Cấu hình cho SignalR nhận Token từ Query String
                     options.Events = new JwtBearerEvents
                     {
                         OnMessageReceived = context =>
                         {
-                            var path = context.Request.Path;
-                            if (!path.HasValue ||
-                                path.Value?.IndexOf("/chathub", StringComparison.OrdinalIgnoreCase) < 0)
-                            {
-                                return Task.CompletedTask;
-                            }
-
-                            var accessToken = context.Request.Query["access_token"].ToString();
-                            if (!string.IsNullOrEmpty(accessToken))
+                            var accessToken = context.Request.Query["access_token"];
+                            var path = context.HttpContext.Request.Path;
+                            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chatHub"))
                             {
                                 context.Token = accessToken;
-                                return Task.CompletedTask;
                             }
-
-                            var authHeader = context.Request.Headers.Authorization.ToString();
-                            if (authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-                            {
-                                context.Token = authHeader["Bearer ".Length..].Trim();
-                            }
-
                             return Task.CompletedTask;
                         }
                     };
