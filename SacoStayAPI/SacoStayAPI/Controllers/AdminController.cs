@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using SacoStayAPI.Model.DTOs;
 using SacoStayAPI.Model.Entities;
 using SacoStayAPI.Repositories;
+using SacoStayAPI.Service;
 using SacoStayAPI.Services;
 using System.Security.Claims;
 
@@ -16,11 +17,16 @@ namespace SacoStayAPI.Controllers
     {
         private readonly UserManager<Account> _userManager;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly INotificationDispatcher _notificationDispatcher;
 
-        public AdminController(UserManager<Account> userManager, IUnitOfWork unitOfWork)
+        public AdminController(
+            UserManager<Account> userManager,
+            IUnitOfWork unitOfWork,
+            INotificationDispatcher notificationDispatcher)
         {
             _userManager = userManager;
             _unitOfWork = unitOfWork;
+            _notificationDispatcher = notificationDispatcher;
         }
 
         [Authorize(AuthenticationSchemes = "Bearer", Roles = "admin")]
@@ -130,6 +136,13 @@ namespace SacoStayAPI.Controllers
             _unitOfWork.Repository<RoomPost>().Update(post);
             await _unitOfWork.CompleteAsync();
 
+            await _notificationDispatcher.NotifyAsync(
+                post.UserId,
+                "Bài đăng đã được duyệt",
+                $"Bài đăng '{post.Title}' của bạn đã được admin duyệt và hiển thị công khai.",
+                "system",
+                $"/owner/my-posts?roomPostId={post.Id}");
+
             return Ok(new { message = "Đã duyệt tin đăng. Tin hiển thị công khai.", status = post.Status });
         }
 
@@ -143,6 +156,13 @@ namespace SacoStayAPI.Controllers
             post.Status = "Hidden";
             _unitOfWork.Repository<RoomPost>().Update(post);
             await _unitOfWork.CompleteAsync();
+
+            await _notificationDispatcher.NotifyAsync(
+                post.UserId,
+                "Bài đăng bị từ chối",
+                $"Bài đăng '{post.Title}' đã bị admin từ chối / ẩn.",
+                "system",
+                $"/owner/my-posts?roomPostId={post.Id}");
 
             return Ok(new { message = "Đã từ chối / ẩn tin đăng.", status = post.Status });
         }

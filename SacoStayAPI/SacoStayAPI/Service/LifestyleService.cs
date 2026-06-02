@@ -9,11 +9,13 @@ namespace SacoStayAPI.Service
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly UserManager<Account> _userManager;
+        private readonly INotificationDispatcher _notificationDispatcher;
 
-        public LifestyleService(IUnitOfWork unitOfWork, UserManager<Account> userManager)
+        public LifestyleService(IUnitOfWork unitOfWork, UserManager<Account> userManager, INotificationDispatcher notificationDispatcher)
         {
             _unitOfWork = unitOfWork;
             _userManager = userManager;
+            _notificationDispatcher = notificationDispatcher;
         }
         //1.lấy tất cả câu hỏi về lối sống kèm theo các lựa chọn
         public async Task<IEnumerable<LifestyleQuestionDTO>> GetAllQuestionsWithOptionsAsync()
@@ -292,6 +294,8 @@ namespace SacoStayAPI.Service
                     _unitOfWork.Repository<UserSwipe>().Remove(duplicate);
 
                 await _unitOfWork.CompleteAsync();
+                if (isLike)
+                    await TryNotifyMutualMatchAsync(currentUserId, targetUserId);
                 return;
             }
 
@@ -304,6 +308,51 @@ namespace SacoStayAPI.Service
 
             await _unitOfWork.Repository<UserSwipe>().AddAsync(newSwipe);
             await _unitOfWork.CompleteAsync();
+            if (isLike)
+                await TryNotifyMutualMatchAsync(currentUserId, targetUserId);
+        }
+
+        private async Task TryNotifyMutualMatchAsync(string currentUserId, string targetUserId)
+        {
+            if (!Guid.TryParse(currentUserId, out var currentGuid) || !Guid.TryParse(targetUserId, out var targetGuid))
+                return;
+
+            var reciprocal = (await _unitOfWork.Repository<UserSwipe>()
+                .FindAsync(s => s.SwiperId == targetUserId && s.SwipedUserId == currentUserId && s.IsLike))
+                .Any();
+
+            if (!reciprocal)
+                return;
+
+            const string title = "Kết nối mới";
+            const string type = "match";
+            const string intro = "Có bạn liên kết rồi, hãy kết nối ngay";
+            var targetName = await DisplayNameForUserAsync(targetGuid);
+            var currentName = await DisplayNameForUserAsync(currentGuid);
+
+            await _notificationDispatcher.NotifyAsync(
+                currentGuid,
+                title,
+                $"{intro}\n{targetName}",
+                type,
+                $"/chat?with={targetGuid}");
+
+            await _notificationDispatcher.NotifyAsync(
+                targetGuid,
+                title,
+                $"{intro}\n{currentName}",
+                type,
+                $"/chat?with={currentGuid}");
+        }
+
+        private async Task<string> DisplayNameForUserAsync(Guid userId)
+        {
+            var account = await _userManager.FindByIdAsync(userId.ToString());
+            if (account == null) return "Người dùng";
+            var full = $"{account.FirstName} {account.LastName}".Trim();
+            if (!string.IsNullOrWhiteSpace(full)) return full;
+            if (!string.IsNullOrWhiteSpace(account.UserName)) return account.UserName;
+            return "Người dùng";
         }
         public async Task<LifestyleQuestion> UpdateQuestionOnlyAsync(UpdateQuestionDTO dto)
         {

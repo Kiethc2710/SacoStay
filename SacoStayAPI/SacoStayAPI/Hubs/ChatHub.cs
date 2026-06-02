@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.SignalR;
 using SacoStayAPI.Data;
 using SacoStayAPI.Model.Entities;
+using Microsoft.EntityFrameworkCore;
 using SacoStayAPI.Service;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
@@ -49,7 +50,9 @@ namespace SacoStayAPI.Hubs
             await Clients.User(receiverKey).SendAsync("ReceiveMessage", senderKey, trimmed);
             await Clients.Caller.SendAsync("ReceiveMessage", senderKey, trimmed);
 
-            var senderName = Context.User?.Identity?.Name ?? senderKey;
+            var sender = await _context.Accounts.AsNoTracking()
+                .FirstOrDefaultAsync(a => a.Id == senderGuid);
+            var senderName = BuildDisplayName(sender) ?? "Người dùng";
             var title = "Tin nhắn mới";
             var messagePreview = trimmed.Length > 80 ? trimmed[..80] + "..." : trimmed;
             await _notificationDispatcher.NotifyAsync(
@@ -57,8 +60,17 @@ namespace SacoStayAPI.Hubs
                 title,
                 $"{senderName}: {messagePreview}",
                 "chat",
-                $"/chat/{senderKey}"
+                $"/chat?with={senderKey}"
             );
+        }
+
+        private static string? BuildDisplayName(Account? account)
+        {
+            if (account == null) return null;
+            var full = $"{account.FirstName} {account.LastName}".Trim();
+            if (!string.IsNullOrWhiteSpace(full)) return full;
+            if (!string.IsNullOrWhiteSpace(account.UserName)) return account.UserName;
+            return null;
         }
     }
 }
