@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -133,10 +134,11 @@ namespace SacoStayAPI
 
             // CORS cho Angular production/local
             var frontendBaseUrl = builder.Configuration["Frontend:BaseUrl"] ?? "http://localhost:4200";
+            var frontendSecondaryBaseUrl = builder.Configuration["Frontend:SecondaryBaseUrl"];
             var allowedOrigins = new[]
             {
                 frontendBaseUrl.TrimEnd('/'),
-                builder.Configuration["Frontend:SecondaryBaseUrl"]?.TrimEnd('/'),
+                frontendSecondaryBaseUrl?.TrimEnd('/'),
                 "http://localhost:4200",
                 "https://localhost:4200"
             }
@@ -159,6 +161,13 @@ namespace SacoStayAPI
             // ================= 2. BUILD APP =================
 
             var app = builder.Build();
+
+            // Forwarded headers để chạy tốt sau reverse proxy / cloud hosting
+            app.UseForwardedHeaders(new ForwardedHeadersOptions
+            {
+                ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+                ForwardLimit = null
+            });
 
             // Seed data
             using (var scope = app.Services.CreateScope())
