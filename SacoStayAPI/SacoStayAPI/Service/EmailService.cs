@@ -52,7 +52,8 @@ namespace SacoStayAPI.Services
             {
                 _logger.LogInformation("Sending email via SMTP. Host={Host}, Port={Port}, From={From}, To={To}, Subject={Subject}", host, port, from, to, subject);
 
-                await smtp.ConnectAsync(host, port, SecureSocketOptions.StartTls);
+                var socketOptions = port == 465 ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTls;
+                await smtp.ConnectAsync(host, port, socketOptions);
                 await smtp.AuthenticateAsync(user, password);
                 await smtp.SendAsync(email);
                 await smtp.DisconnectAsync(true);
