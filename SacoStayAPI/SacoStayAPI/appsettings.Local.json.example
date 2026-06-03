@@ -1,0 +1,20 @@
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=YOUR_NEON_HOST;Database=neondb;Username=...;Password=...;Port=5432;SSL Mode=Require;Trust Server Certificate=true"
+  },
+  "Jwt": {
+    "Key": "your-jwt-signing-key-min-32-chars"
+  },
+  "Smtp": {
+    "User": "",
+    "Pass": "",
+    "From": ""
+  },
+  "PayOS": {
+    "ClientId": "",
+    "ApiKey": "",
+    "ChecksumKey": "",
+    "ReturnUrl": "https://api.sacostay.id.vn/api/Payment/payos-return",
+    "CancelUrl": "https://api.sacostay.id.vn/api/Payment/payos-return"
+  }
+}

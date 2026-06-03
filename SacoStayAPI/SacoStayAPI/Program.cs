@@ -21,6 +21,17 @@ namespace SacoStayAPI
         public static async Task Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
+            // Bí mật local / server (Neon, JWT, SMTP…) — không commit (xem appsettings.Local.json.example)
+            builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+
+            var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")?.Trim();
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                throw new InvalidOperationException(
+                    "Thiếu ConnectionStrings:DefaultConnection. " +
+                    "Tạo file appsettings.Local.json (copy từ appsettings.Local.json.example), " +
+                    "hoặc đặt biến môi trường ConnectionStrings__DefaultConnection trên hosting.");
+            }
 
             // ================= 1. REGISTER SERVICES =================
 
@@ -79,7 +90,7 @@ namespace SacoStayAPI
 
             // Database (PostgreSQL)
             builder.Services.AddDbContext<ApplicationDBContext>(options =>
-                options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+                options.UseNpgsql(connectionString));
 
             // Identity
             builder.Services.AddIdentity<Account, IdentityRole<Guid>>(options =>
@@ -132,26 +143,31 @@ namespace SacoStayAPI
 
             builder.Services.AddAuthorization();
 
-            // CORS cho Angular production/local
-            var frontendBaseUrl = builder.Configuration["Frontend:BaseUrl"] ?? "http://localhost:4200";
+            // CORS — FE production + tùy chọn localhost khi dev
+            var frontendBaseUrl = builder.Configuration["Frontend:BaseUrl"] ?? "https://sacostay.id.vn";
             var frontendSecondaryBaseUrl = builder.Configuration["Frontend:SecondaryBaseUrl"];
-            var allowedOrigins = new[]
+            var allowedOrigins = new List<string>
             {
                 frontendBaseUrl.TrimEnd('/'),
-                frontendSecondaryBaseUrl?.TrimEnd('/'),
-                "http://localhost:4200",
-                "https://localhost:4200"
+                frontendSecondaryBaseUrl?.TrimEnd('/') ?? string.Empty
+            };
+            if (builder.Environment.IsDevelopment())
+            {
+                allowedOrigins.Add("http://localhost:4200");
+                allowedOrigins.Add("https://localhost:4200");
             }
-            .Where(origin => !string.IsNullOrWhiteSpace(origin))
-            .Select(origin => origin!)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+
+            var distinctOrigins = allowedOrigins
+                .Where(origin => !string.IsNullOrWhiteSpace(origin))
+                .Select(origin => origin!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
 
             builder.Services.AddCors(options =>
             {
                 options.AddPolicy("AllowFrontend", policy =>
                 {
-                    policy.WithOrigins(allowedOrigins)
+                    policy.WithOrigins(distinctOrigins)
                           .AllowAnyHeader()
                           .AllowAnyMethod()
                           .AllowCredentials();
@@ -169,10 +185,18 @@ namespace SacoStayAPI
                 ForwardLimit = null
             });
 
-            // Seed data
-            using (var scope = app.Services.CreateScope())
+            // Seed roles/users (chỉ khi DB kết nối được)
+            try
             {
+                using var scope = app.Services.CreateScope();
                 await SeedData.InitializeAsync(scope.ServiceProvider);
+            }
+            catch (Exception ex)
+            {
+                var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("SeedData");
+                logger.LogError(ex, "Seed data thất bại — kiểm tra ConnectionString và migration DB.");
+                if (app.Environment.IsDevelopment())
+                    throw;
             }
 
             if (app.Environment.IsDevelopment())
