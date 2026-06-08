@@ -22,7 +22,7 @@ namespace SacoStayAPI
         {
             var builder = WebApplication.CreateBuilder(args);
             // Bí mật local / server (Neon, JWT, SMTP…) — không commit (xem appsettings.Local.json.example)
-            builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+            builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false);
 
             var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")?.Trim();
             if (string.IsNullOrWhiteSpace(connectionString))
