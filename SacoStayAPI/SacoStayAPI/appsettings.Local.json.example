@@ -7,13 +7,9 @@
     "Audience": "SacoStayAPIUser",
     "Key": "your-jwt-signing-key-min-32-chars"
   },
-  "Smtp": {
-    "Host": "smtp.gmail.com",
-    "Port": "587",
-    "User": "your-email@gmail.com",
-    "Pass": "your-gmail-app-password",
-    "From": "your-email@gmail.com",
-    "UseSsl": "true"
+  "Resend": {
+    "ApiKey": "your-resend-api-key",
+    "From": "onboarding@mail.sacostay.id.vn"
   },
   "PayOS": {
     "ClientId": "",

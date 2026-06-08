@@ -1,16 +1,17 @@
-
-using MimeKit;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
-using MailKit.Security;
-using MailKit.Net.Smtp;
 
 namespace SacoStayAPI.Services
 {
     public class EmailService
     {
+        private static readonly HttpClient HttpClient = new();
         private readonly IConfiguration _configuration;
         private readonly ILogger<EmailService> _logger;
 
@@ -22,59 +23,48 @@ namespace SacoStayAPI.Services
 
         public async Task SendEmailAsync(string to, string subject, string body)
         {
-            var host = _configuration["Smtp:Host"];
-            var portValue = _configuration["Smtp:Port"];
-            var user = _configuration["Smtp:User"];
-            var password = _configuration["Smtp:Pass"];
-            var from = _configuration["Smtp:From"];
+            var apiKey = _configuration["Resend:ApiKey"];
+            var from = _configuration["Resend:From"];
 
-            if (string.IsNullOrWhiteSpace(host))
-                throw new InvalidOperationException("Thiếu cấu hình SMTP host.");
-            if (string.IsNullOrWhiteSpace(portValue) || !int.TryParse(portValue, out var port))
-                throw new InvalidOperationException("Cấu hình SMTP port không hợp lệ.");
-            if (string.IsNullOrWhiteSpace(user))
-                throw new InvalidOperationException("Thiếu cấu hình SMTP user.");
-            if (string.IsNullOrWhiteSpace(password))
-                throw new InvalidOperationException("Thiếu cấu hình SMTP password.");
+            if (string.IsNullOrWhiteSpace(apiKey))
+                throw new InvalidOperationException("Thiếu cấu hình Resend API key.");
             if (string.IsNullOrWhiteSpace(from))
-                throw new InvalidOperationException("Thiếu cấu hình SMTP from.");
+                throw new InvalidOperationException("Thiếu cấu hình Resend From address.");
             if (string.IsNullOrWhiteSpace(to))
                 throw new InvalidOperationException("Địa chỉ email người nhận không hợp lệ.");
 
-            var email = new MimeMessage();
-            email.From.Add(MailboxAddress.Parse(from));
-            email.To.Add(MailboxAddress.Parse(to));
-            email.Subject = subject;
-            email.Body = new TextPart(MimeKit.Text.TextFormat.Html) { Text = body };
+            var payload = new
+            {
+                from,
+                to = new[] { to },
+                subject,
+                html = body
+            };
 
-            using var smtp = new SmtpClient();
+            var request = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+            request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
             try
             {
-                _logger.LogInformation("Sending email via SMTP. Host={Host}, Port={Port}, From={From}, To={To}, Subject={Subject}", host, port, from, to, subject);
+                _logger.LogInformation("Sending email via Resend. From={From}, To={To}, Subject={Subject}", from, to, subject);
 
-                var socketOptions = port == 465 ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTls;
-                await smtp.ConnectAsync(host, port, socketOptions);
-                await smtp.AuthenticateAsync(user, password);
-                await smtp.SendAsync(email);
-                await smtp.DisconnectAsync(true);
+                var response = await HttpClient.SendAsync(request);
+                var content = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogError("Resend send failed. StatusCode={StatusCode}, Response={Response}", response.StatusCode, content);
+                    throw new InvalidOperationException($"Không gửi được email tới {to}. Vui lòng kiểm tra cấu hình Resend.");
+                }
 
                 _logger.LogInformation("Email sent successfully to {To} with subject {Subject}", to, subject);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to send email. Host={Host}, Port={Port}, From={From}, To={To}, Subject={Subject}", host, port, from, to, subject);
-                try
-                {
-                    if (smtp.IsConnected)
-                        await smtp.DisconnectAsync(true);
-                }
-                catch
-                {
-                    // Ignore disconnect errors to preserve original failure.
-                }
-
-                throw new InvalidOperationException($"Không gửi được email tới {to}. Vui lòng kiểm tra lại cấu hình SMTP.", ex);
+                _logger.LogError(ex, "Failed to send email via Resend. From={From}, To={To}, Subject={Subject}", from, to, subject);
+                throw new InvalidOperationException($"Không gửi được email tới {to}. Vui lòng kiểm tra lại cấu hình Resend.", ex);
             }
         }
     }
-} 
+}
