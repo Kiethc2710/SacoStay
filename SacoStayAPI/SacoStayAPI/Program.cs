@@ -63,6 +63,9 @@ namespace SacoStayAPI
             builder.Services.AddScoped<INotificationDispatcher, NotificationDispatcher>();
             builder.Services.AddScoped<IRoomPostService, RoomPostService>();
             builder.Services.AddScoped<IReportService, ReportService>();
+            // Đăng ký HttpClientFactory cho hệ thống
+            builder.Services.AddHttpClient();
+            builder.Services.AddScoped<IKycService, KycService>();
             // Swagger + Bearer 
             builder.Services.AddSwaggerGen(c =>
             {
