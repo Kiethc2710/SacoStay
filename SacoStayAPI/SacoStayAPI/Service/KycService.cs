@@ -187,6 +187,46 @@ namespace SacoStayAPI.Services
             return null;
         }
 
+        //private async Task<bool> CallFptLivenessAsync(IFormFile selfieFile)
+        //{
+        //    try
+        //    {
+        //        var client = _httpClientFactory.CreateClient();
+        //        var apiKey = _configuration["FptAiConfig:ApiKey"];
+        //        var url = _configuration["FptAiConfig:LivenessUrl"];
+
+        //        client.DefaultRequestHeaders.Add("api-key", apiKey);
+
+        //        using var content = new MultipartFormDataContent();
+        //        using var stream = selfieFile.OpenReadStream();
+        //        var streamContent = new StreamContent(stream);
+        //        streamContent.Headers.ContentType = new MediaTypeHeaderValue(selfieFile.ContentType);
+        //        content.Add(streamContent, "image", selfieFile.FileName);
+
+        //        var response = await client.PostAsync(url, content);
+        //        if (!response.IsSuccessStatusCode) return false;
+
+        //        var jsonString = await response.Content.ReadAsStringAsync();
+        //        using var doc = JsonDocument.Parse(jsonString);
+        //        var root = doc.RootElement;
+
+        //        if (root.TryGetProperty("data", out var dataObj) && dataObj.TryGetProperty("is_live", out var isLiveProp))
+        //        {
+        //            // Xử lý an toàn cho cả dạng Boolean gốc hoặc chuỗi ký tự "True"/"False" từ FPT trả về
+        //            if (isLiveProp.ValueKind == JsonValueKind.True) return true;
+        //            if (isLiveProp.ValueKind == JsonValueKind.False) return false;
+        //            if (isLiveProp.ValueKind == JsonValueKind.String)
+        //            {
+        //                return bool.TryParse(isLiveProp.GetString(), out bool parsedResult) && parsedResult;
+        //            }
+        //        }
+        //        return false;
+        //    }
+        //    catch
+        //    {
+        //        return false;
+        //    }
+        //}
         private async Task<bool> CallFptLivenessAsync(IFormFile selfieFile)
         {
             try
@@ -204,15 +244,21 @@ namespace SacoStayAPI.Services
                 content.Add(streamContent, "image", selfieFile.FileName);
 
                 var response = await client.PostAsync(url, content);
+
+                // 🌟 ÉP ĐỌC LOG LIVENESS ĐỂ XEM FPT.AI TRẢ VỀ MÃ GÌ 🌟
+                var jsonString = await response.Content.ReadAsStringAsync();
+                Console.WriteLine("\n==================================================");
+                Console.WriteLine($">>> PHẢN HỒI LIVENESS TỪ FPT.AI (Mã {response.StatusCode}):");
+                Console.WriteLine(jsonString);
+                Console.WriteLine("==================================================\n");
+
                 if (!response.IsSuccessStatusCode) return false;
 
-                var jsonString = await response.Content.ReadAsStringAsync();
                 using var doc = JsonDocument.Parse(jsonString);
                 var root = doc.RootElement;
 
                 if (root.TryGetProperty("data", out var dataObj) && dataObj.TryGetProperty("is_live", out var isLiveProp))
                 {
-                    // Xử lý an toàn cho cả dạng Boolean gốc hoặc chuỗi ký tự "True"/"False" từ FPT trả về
                     if (isLiveProp.ValueKind == JsonValueKind.True) return true;
                     if (isLiveProp.ValueKind == JsonValueKind.False) return false;
                     if (isLiveProp.ValueKind == JsonValueKind.String)
@@ -222,8 +268,9 @@ namespace SacoStayAPI.Services
                 }
                 return false;
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($">>> LỖI HỆ THỐNG KHI GỌI LIVENESS: {ex.Message}");
                 return false;
             }
         }
