@@ -51,18 +51,12 @@ namespace SacoStayAPI.Services
                 return (false, "Không thể đọc được thông tin CCCD. Vui lòng chụp rõ nét mặt trước, không lóa sáng.");
             }
 
-            // 3. Gọi FPT.AI Liveness để kiểm tra ảnh chân dung có phải người thật đang chụp trực tiếp không
-            bool isLivePerson = await CallFptLivenessAsync(dto.SelfieImage);
-            if (!isLivePerson)
-            {
-                return (false, "Phát hiện ảnh selfie không hợp lệ (ảnh chụp lại từ màn hình thiết bị khác hoặc giấy in). Vui lòng chụp trực tiếp.");
-            }
+            // 3 & 4. Gọi FPT.AI Liveness V3 để KIỂM TRA NGƯỜI THẬT + SO KHỚP KHUÔN MẶT đồng thời
+            double matchResult = await CallFptLivenessAsync(dto.SelfieVideo, dto.FrontIdImage);
 
-            // 4. Gọi FPT.AI FaceMatch để đối chiếu ảnh khuôn mặt trên CCCD với ảnh Selfie
-            double matchResult = await CallFptFaceMatchAsync(dto.FrontIdImage, dto.SelfieImage);
             if (matchResult < 0)
             {
-                return (false, "Hệ thống AI không thể nhận diện và so khớp được khuôn mặt trong hai ảnh.");
+                return (false, "Phát hiện video selfie không hợp lệ hoặc không trùng khớp khuôn mặt. Vui lòng quay hình trực tiếp.");
             }
 
             // Ngưỡng tin cậy chuẩn của eKYC thường là >= 80% trùng khớp
@@ -71,7 +65,7 @@ namespace SacoStayAPI.Services
             // 5. Upload lưu trữ các tệp ảnh lên Cloud của bạn thông qua IPhotoService
             var frontUrl = await _photoService.UploadPhotoAsync(dto.FrontIdImage, "kyc-documents");
             var backUrl = await _photoService.UploadPhotoAsync(dto.BackIdImage, "kyc-documents");
-            var selfieUrl = await _photoService.UploadPhotoAsync(dto.SelfieImage, "kyc-documents");
+            var selfieUrl = await _photoService.UploadPhotoAsync(dto.SelfieVideo, "kyc-documents");
             string? vneidUrl = dto.VneidScreenshot != null
                 ? await _photoService.UploadPhotoAsync(dto.VneidScreenshot, "kyc-documents")
                 : null;
@@ -227,51 +221,77 @@ namespace SacoStayAPI.Services
         //        return false;
         //    }
         //}
-        private async Task<bool> CallFptLivenessAsync(IFormFile selfieFile)
+        private async Task<double> CallFptLivenessAsync(IFormFile videoFile, IFormFile frontIdImage)
         {
             try
             {
                 var client = _httpClientFactory.CreateClient();
                 var apiKey = _configuration["FptAiConfig:ApiKey"];
-                var url = _configuration["FptAiConfig:LivenessUrl"];
+                var url = _configuration["FptAiConfig:LivenessUrl"]; // Link v3: https://api.fpt.ai/dmp/liveness/v3
 
                 client.DefaultRequestHeaders.Add("api-key", apiKey);
 
                 using var content = new MultipartFormDataContent();
-                using var stream = selfieFile.OpenReadStream();
-                var streamContent = new StreamContent(stream);
-                streamContent.Headers.ContentType = new MediaTypeHeaderValue(selfieFile.ContentType);
-                content.Add(streamContent, "image", selfieFile.FileName);
+
+                // 1. Đóng gói tệp tin Video quay từ webcam (Key bắt buộc của V3 là "video")
+                using var videoStream = videoFile.OpenReadStream();
+                var videoContent = new StreamContent(videoStream);
+                videoContent.Headers.ContentType = new MediaTypeHeaderValue(videoFile.ContentType);
+                content.Add(videoContent, "video", videoFile.FileName);
+
+                // 2. Đóng gói luôn ảnh mặt trước CCCD để nhờ FPT.AI đối chiếu FaceMatch luôn
+                using var imageStream = frontIdImage.OpenReadStream();
+                var imageContent = new StreamContent(imageStream);
+                imageContent.Headers.ContentType = new MediaTypeHeaderValue(frontIdImage.ContentType);
+                content.Add(imageContent, "image", frontIdImage.FileName);
 
                 var response = await client.PostAsync(url, content);
-
-                // 🌟 ÉP ĐỌC LOG LIVENESS ĐỂ XEM FPT.AI TRẢ VỀ MÃ GÌ 🌟
                 var jsonString = await response.Content.ReadAsStringAsync();
+
                 Console.WriteLine("\n==================================================");
-                Console.WriteLine($">>> PHẢN HỒI LIVENESS TỪ FPT.AI (Mã {response.StatusCode}):");
+                Console.WriteLine($">>> PHẢN HỒI LIVENESS V3 TỪ FPT.AI (Mã {response.StatusCode}):");
                 Console.WriteLine(jsonString);
                 Console.WriteLine("==================================================\n");
 
-                if (!response.IsSuccessStatusCode) return false;
+                if (!response.IsSuccessStatusCode) return -1;
 
                 using var doc = JsonDocument.Parse(jsonString);
                 var root = doc.RootElement;
 
-                if (root.TryGetProperty("data", out var dataObj) && dataObj.TryGetProperty("is_live", out var isLiveProp))
+                bool isLive = false;
+                double similarity = -1;
+
+                // 3. Bóc tách kết quả Liveness (Kiểm tra người thật)
+                if (root.TryGetProperty("liveness", out var livenessObj) &&
+                    livenessObj.TryGetProperty("is_live", out var isLiveProp))
                 {
-                    if (isLiveProp.ValueKind == JsonValueKind.True) return true;
-                    if (isLiveProp.ValueKind == JsonValueKind.False) return false;
-                    if (isLiveProp.ValueKind == JsonValueKind.String)
+                    var isLiveStr = isLiveProp.GetString();
+                    isLive = (isLiveStr == "True");
+                }
+
+                // Nếu phát hiện video giả lập hoặc ảnh chụp lại -> Trả về -1 coi như thất bại
+                if (!isLive) return -1;
+
+                // 4. Bóc tách kết quả FaceMatch tự động tích hợp bên trong gói V3
+                if (root.TryGetProperty("face_match", out var faceMatchObj) &&
+                    faceMatchObj.TryGetProperty("similarity", out var simProp))
+                {
+                    if (simProp.ValueKind == JsonValueKind.Number)
                     {
-                        return bool.TryParse(isLiveProp.GetString(), out bool parsedResult) && parsedResult;
+                        similarity = simProp.GetDouble();
+                    }
+                    else if (simProp.ValueKind == JsonValueKind.String)
+                    {
+                        double.TryParse(simProp.GetString(), out similarity);
                     }
                 }
-                return false;
+
+                return similarity;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($">>> LỖI HỆ THỐNG KHI GỌI LIVENESS: {ex.Message}");
-                return false;
+                Console.WriteLine($">>> LỖI HỆ THỐNG LIVENESS V3: {ex.Message}");
+                return -1;
             }
         }
 

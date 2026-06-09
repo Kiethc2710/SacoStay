@@ -10,8 +10,9 @@ namespace SacoStayAPI.Model.DTOs
         [Required(ErrorMessage = "Vui lòng tải lên ảnh mặt sau CCCD")]
         public IFormFile BackIdImage { get; set; }
 
-        [Required(ErrorMessage = "Vui lòng tải lên ảnh chụp khuôn mặt (Selfie)")]
-        public IFormFile SelfieImage { get; set; }
+        // Thay vì nhận ảnh, bây giờ sẽ nhận file video quay trực tiếp
+        [Required(ErrorMessage = "Vui lòng tải lên video quay khuôn mặt")]
+        public IFormFile SelfieVideo { get; set; }
 
         public IFormFile? VneidScreenshot { get; set; }
     }
