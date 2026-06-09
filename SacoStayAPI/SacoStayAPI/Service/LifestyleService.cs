@@ -186,9 +186,7 @@ namespace SacoStayAPI.Service
                 .FindAsync(u => u.UserId == currentUserId);
 
             var myOptionIds = currentUserAnswers.Select(x => x.LifestyleOptionId).ToList();
-            int totalQuestions = myOptionIds.Count;
-
-            if (totalQuestions == 0) return new List<SwipeCardDTO>();
+            if (myOptionIds.Count == 0) return new List<SwipeCardDTO>();
 
             var swipedIds = new List<string>();
             if (!includeSwiped)
@@ -198,8 +196,44 @@ namespace SacoStayAPI.Service
                 swipedIds = swipedHistory.Select(s => s.SwipedUserId).ToList();
             }
 
+            return await BuildSwipeDeckFromOptionIdsAsync(myOptionIds, currentUserId, swipedIds, limit);
+        }
+
+        /// <summary>
+        /// Guest discovery: nhận selectedOptionIds từ FE (localStorage), không cần Bearer.
+        /// </summary>
+        public async Task<List<SwipeCardDTO>> GetGuestSwipeDeckAsync(IReadOnlyList<int> selectedOptionIds, int limit)
+        {
+            if (selectedOptionIds == null || selectedOptionIds.Count == 0)
+                return new List<SwipeCardDTO>();
+
+            var distinctIds = selectedOptionIds.Distinct().ToList();
+            var selectedOptions = (await _unitOfWork.Repository<LifestyleOption>()
+                .FindAsync(o => distinctIds.Contains(o.Id))).ToList();
+
+            if (selectedOptions.Count != distinctIds.Count)
+                throw new ArgumentException("Có OptionId không hợp lệ trong selectedOptionIds.");
+
+            var myOptionIds = selectedOptions.Select(o => o.Id).ToList();
+            if (myOptionIds.Count == 0) return new List<SwipeCardDTO>();
+
+            return await BuildSwipeDeckFromOptionIdsAsync(myOptionIds, excludeUserId: null, excludeUserIds: null, limit);
+        }
+
+        private async Task<List<SwipeCardDTO>> BuildSwipeDeckFromOptionIdsAsync(
+            List<int> myOptionIds,
+            string? excludeUserId,
+            List<string>? excludeUserIds,
+            int limit)
+        {
+            int totalQuestions = myOptionIds.Count;
+            if (totalQuestions == 0) return new List<SwipeCardDTO>();
+
+            var excluded = excludeUserIds ?? new List<string>();
             var allOtherAnswers = await _unitOfWork.Repository<UserLifestyle>()
-                .FindAsync(u => u.UserId != currentUserId && !swipedIds.Contains(u.UserId));
+                .FindAsync(u =>
+                    (excludeUserId == null || u.UserId != excludeUserId) &&
+                    !excluded.Contains(u.UserId));
 
             var groupedAnswers = allOtherAnswers.GroupBy(u => u.UserId);
             var deck = new List<SwipeCardDTO>();

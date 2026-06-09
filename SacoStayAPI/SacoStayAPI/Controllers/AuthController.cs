@@ -34,14 +34,23 @@ namespace SacoStayAPI.Controllers
                                 IConfiguration configuration,
                                 IMemoryCache cache,
                                 EmailService emailService,
-                                IPhotoService photoService) // Inject vào đây
+                                IPhotoService photoService)
         {
             _roleManager = roleManager;
             _userManager = userManager;
             _configuration = configuration;
             _cache = cache;
             _emailService = emailService;
-            _photoService = photoService; // Gán giá trị
+            _photoService = photoService;
+        }
+
+        /// <summary>FE gửi tenant/landlord — DB seed dùng tenants.</summary>
+        private static string NormalizeRegisterRole(string? role)
+        {
+            var r = (role ?? string.Empty).Trim().ToLowerInvariant();
+            if (r == "tenant") return "tenants";
+            if (r == "landlord" || r == "tenants" || r == "admin") return r;
+            return "tenants";
         }
 
         private async Task<string> GenerateJwtToken(Account user)
@@ -166,8 +175,8 @@ namespace SacoStayAPI.Controllers
             });
         }
 
-        /// <summary>Hồ sơ công khai để hiển thị tên/avatar trong chat (Bearer).</summary>
-        [Authorize(AuthenticationSchemes = "Bearer")]
+        /// <summary>Hồ sơ công khai — discovery / chat (không trả email, phone).</summary>
+        [AllowAnonymous]
         [HttpGet("user/{userId}")]
         public async Task<IActionResult> GetUserPublicProfile(Guid userId)
         {
@@ -209,11 +218,15 @@ namespace SacoStayAPI.Controllers
             var existingPhone = _userManager.Users.FirstOrDefault(u => u.PhoneNumber == dto.PhoneNumber);
             if (existingPhone != null) return BadRequest(new { message = "Số điện thoại đã tồn tại" });
 
+            var roleName = NormalizeRegisterRole(dto.Role);
+
             var user = new Account
             {
                 UserName = dto.UserName,
                 Email = dto.Email,
                 PhoneNumber = dto.PhoneNumber,
+                FirstName = dto.FirstName?.Trim(),
+                LastName = dto.LastName?.Trim(),
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -221,19 +234,19 @@ namespace SacoStayAPI.Controllers
 
             if (result.Succeeded)
             {
-                if (!await _roleManager.RoleExistsAsync(dto.Role))
+                if (!await _roleManager.RoleExistsAsync(roleName))
                 {
-                    await _roleManager.CreateAsync(new IdentityRole<Guid>(dto.Role));
+                    await _roleManager.CreateAsync(new IdentityRole<Guid>(roleName));
                 }
 
-                await _userManager.AddToRoleAsync(user, dto.Role);
+                await _userManager.AddToRoleAsync(user, roleName);
 
                 var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
                 var otp = new Random().Next(100000, 999999).ToString();
 
                 _cache.Set($"email_confirm_{user.Email}", new { Otp = otp, Token = token }, TimeSpan.FromMinutes(5));
 
-                await _emailService.SendEmailAsync(user.Email, "Xác nhận email SacoStay", $"Mã OTP của bạn là: <b>{otp}</b>. Hết hạn sau 5 phút.");
+                await _emailService.SendEmailAsync(user.Email!, "Xác nhận email SacoStay", $"Mã OTP của bạn là: <b>{otp}</b>. Hết hạn sau 5 phút.");
 
                 return Ok(new { message = "Đăng ký thành công. Vui lòng nhập OTP gửi về email." });
             }
@@ -253,7 +266,7 @@ namespace SacoStayAPI.Controllers
 
             _cache.Set($"email_confirm_{user.Email}", new { Otp = otp, Token = token }, TimeSpan.FromMinutes(5));
 
-            await _emailService.SendEmailAsync(user.Email, "Gửi lại mã OTP xác nhận email", $"Mã OTP của bạn là: <b>{otp}</b>. Hết hạn sau 5 phút.");
+            await _emailService.SendEmailAsync(user.Email!, "Gửi lại mã OTP xác nhận email", $"Mã OTP của bạn là: <b>{otp}</b>. Hết hạn sau 5 phút.");
             return Ok("Đã gửi lại OTP mới");
         }
 

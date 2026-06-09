@@ -72,14 +72,11 @@ namespace SacoStayAPI.Controllers
             return Ok(answers);
         }
 
-        [Authorize(AuthenticationSchemes = "Bearer")]
+        /// <summary>Câu trả lời lối sống công khai — phục vụ guest discovery enrich thẻ.</summary>
+        [AllowAnonymous]
         [HttpGet("answers/{userId}")]
         public async Task<IActionResult> GetUserAnswers(string userId)
         {
-            var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                             ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
-            if (string.IsNullOrEmpty(currentUserId))
-                return Unauthorized("Token không hợp lệ.");
             if (string.IsNullOrWhiteSpace(userId))
                 return BadRequest("Thiếu userId.");
 
@@ -134,6 +131,49 @@ namespace SacoStayAPI.Controllers
             catch (Exception ex)
             {
                 // Bắt lỗi hệ thống
+                return StatusCode(500, $"Lỗi hệ thống: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Guest dùng thử Tìm bạn — không Bearer; nhận selectedOptionIds (csv) từ quiz localStorage.
+        /// </summary>
+        [AllowAnonymous]
+        [HttpGet("guest-swipe-deck")]
+        public async Task<IActionResult> GetGuestSwipeDeck(
+            [FromQuery] string? selectedOptionIds,
+            [FromQuery] int limit = 50,
+            [FromQuery] bool includeSwiped = false)
+        {
+            _ = includeSwiped; // FE lọc lịch sử swipe local; BE trả full pool tenant.
+
+            if (string.IsNullOrWhiteSpace(selectedOptionIds))
+                return BadRequest("Thiếu selectedOptionIds.");
+
+            var ids = selectedOptionIds
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(s => int.TryParse(s, out var id) ? id : 0)
+                .Where(id => id > 0)
+                .Distinct()
+                .ToList();
+
+            if (ids.Count == 0)
+                return BadRequest("selectedOptionIds không hợp lệ.");
+
+            if (limit < 1) limit = 10;
+            if (limit > 100) limit = 100;
+
+            try
+            {
+                var deck = await _lifestyleService.GetGuestSwipeDeckAsync(ids, limit);
+                return Ok(deck);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
                 return StatusCode(500, $"Lỗi hệ thống: {ex.Message}");
             }
         }
