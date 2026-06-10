@@ -243,7 +243,7 @@ namespace SacoStayAPI.Services
                 using var imageStream = frontIdImage.OpenReadStream();
                 var imageContent = new StreamContent(imageStream);
                 imageContent.Headers.ContentType = new MediaTypeHeaderValue(frontIdImage.ContentType);
-                content.Add(imageContent, "image", frontIdImage.FileName);
+                content.Add(imageContent, "cmnd", frontIdImage.FileName);
 
                 var response = await client.PostAsync(url, content);
                 var jsonString = await response.Content.ReadAsStringAsync();
@@ -261,14 +261,13 @@ namespace SacoStayAPI.Services
                 bool isLive = false;
                 double similarity = -1;
 
-                // 3. Bóc tách kết quả Liveness (Kiểm tra người thật)
+                // 3. Bóc tách kết quả Liveness (Đã sửa: Không phân biệt hoa thường)
                 if (root.TryGetProperty("liveness", out var livenessObj) &&
                     livenessObj.TryGetProperty("is_live", out var isLiveProp))
                 {
-                    var isLiveStr = isLiveProp.GetString();
-                    isLive = (isLiveStr == "True");
+                    var isLiveStr = isLiveProp.GetString() ?? "";
+                    isLive = isLiveStr.Equals("true", StringComparison.OrdinalIgnoreCase);
                 }
-
                 // Nếu phát hiện video giả lập hoặc ảnh chụp lại -> Trả về -1 coi như thất bại
                 if (!isLive) return -1;
 
@@ -282,7 +281,9 @@ namespace SacoStayAPI.Services
                     }
                     else if (simProp.ValueKind == JsonValueKind.String)
                     {
-                        double.TryParse(simProp.GetString(), out similarity);
+                        var simStr = simProp.GetString() ?? "0";
+                        // Dùng InvariantCulture để ép hệ thống luôn đọc dấu chấm (.) là số thập phân
+                        double.TryParse(simStr, System.Globalization.CultureInfo.InvariantCulture, out similarity);
                     }
                 }
 
