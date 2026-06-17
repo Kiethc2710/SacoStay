@@ -23,6 +23,9 @@ namespace SacoStayAPI.Data
         public DbSet<Notification> Notifications { get; set; }
         public DbSet<Report> Reports { get; set; }
         public DbSet<KycRequest> KycSubmissions { get; set; }
+        public DbSet<SharedSpace> SharedSpaces { get; set; }
+        public DbSet<SpaceShortlist> SpaceShortlists { get; set; }
+        public DbSet<RoomVote> RoomVotes { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder); // đừng quên gọi base để Identity hoạt động đúng
