@@ -157,7 +157,7 @@ namespace SacoStayAPI.Service
                         "Cập nhật thông tin phòng",
                         "Bạn đã có phòng! Hãy cập nhật thông tin phòng của bạn để tìm bạn cùng phòng phù hợp hơn nhé.",
                         "room_profile",
-                        "/room-profile"
+                        "/tenant-room-profile?returnUrl=/profile/me"
                     );
                 }
             }
@@ -572,18 +572,15 @@ namespace SacoStayAPI.Service
 
         private static LifestyleQuestion? FindRoomStatusQuestion(List<LifestyleQuestion> questions)
         {
-            var sorted = questions.OrderBy(q => q.Id).ToList();
-            if (sorted.Count >= 2) return sorted[sorted.Count - 2];
-            return sorted.FirstOrDefault(q => IsRoomStatusQuestion(q.Content));
+            return questions.FirstOrDefault(q => IsRoomStatusQuestion(q.Content));
         }
 
         private static LifestyleQuestion? FindRoomPriceQuestion(List<LifestyleQuestion> questions)
         {
-            var sorted = questions.OrderBy(q => q.Id).ToList();
-            if (sorted.Count >= 1) return sorted.Last();
-            return sorted.FirstOrDefault(q => IsRoomPriceQuestion(q.Content));
+            return questions.FirstOrDefault(q => IsRoomPriceQuestion(q.Content));
         }
 
+        /// <summary>Câu giá phòng đã chuyển sang tenant room profile — không bắt buộc trong quiz.</summary>
         private static bool ShouldSkipRoomPriceQuestion(
             List<LifestyleQuestion> allQuestions,
             List<LifestyleOption> selectedOptions,
@@ -592,29 +589,7 @@ namespace SacoStayAPI.Service
         {
             if (roomPriceQuestion == null) return false;
             var answeredIds = selectedOptions.Select(o => o.LifestyleQuestionId).Distinct().ToHashSet();
-            if (answeredIds.Contains(roomPriceQuestion.Id)) return false;
-
-            if (roomStatusQuestion != null)
-            {
-                var roomStatusAnswer = selectedOptions.FirstOrDefault(o => o.LifestyleQuestionId == roomStatusQuestion.Id);
-                if (roomStatusAnswer != null && !IsHasRoomYesOption(roomStatusAnswer.Content))
-                    return true;
-            }
-
-            if (answeredIds.Count == allQuestions.Count - 1)
-            {
-                var sorted = allQuestions.OrderBy(q => q.Id).ToList();
-                var last = sorted.Last();
-                if (last.Id == roomPriceQuestion.Id && sorted.Count >= 2)
-                {
-                    var beforeLast = sorted[^2];
-                    var prevAnswer = selectedOptions.FirstOrDefault(o => o.LifestyleQuestionId == beforeLast.Id);
-                    if (prevAnswer != null && !IsHasRoomYesOption(prevAnswer.Content))
-                        return true;
-                }
-            }
-
-            return false;
+            return !answeredIds.Contains(roomPriceQuestion.Id);
         }
 
         private static bool IsRoomStatusQuestion(string content)
@@ -623,7 +598,9 @@ namespace SacoStayAPI.Service
             if (c.Contains("tình trạng phòng")) return true;
             if (c.Contains("phòng trọ") || c.Contains("phòng ở")) return true;
             if (c.Contains("tìm được") && c.Contains("phòng")) return true;
-            return c.Contains("đã có") && c.Contains("phòng");
+            if (c.Contains("đã có") && c.Contains("phòng")) return true;
+            if (c.Contains("có phòng")) return true;
+            return c.Contains("phòng") && (c.Contains("trọ") || c.Contains("thuê"));
         }
 
         private static bool IsRoomPriceQuestion(string content)
