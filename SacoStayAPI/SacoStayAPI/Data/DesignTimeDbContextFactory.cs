@@ -1,5 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
+using System;
+using System.IO;
 
 namespace SacoStayAPI.Data
 {
@@ -7,16 +9,13 @@ namespace SacoStayAPI.Data
     {
         public ApplicationDBContext CreateDbContext(string[] args)
         {
-          IConfigurationRoot configuration = new ConfigurationBuilder()
-                .SetBasePath(Directory.GetCurrentDirectory())
-                .AddJsonFile("appsettings.json")
-                .Build();
+            var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection")
+                ?? "Host=localhost;Database=sacostay;Username=postgres;Password=postgres;Port=5432";
 
-            var builder = new DbContextOptionsBuilder<ApplicationDBContext>();
-            var connectionString = configuration.GetConnectionString("DefaultConnection");
-            builder.UseNpgsql(connectionString);
+            var optionsBuilder = new DbContextOptionsBuilder<ApplicationDBContext>();
+            optionsBuilder.UseNpgsql(connectionString);
 
-            return new ApplicationDBContext(builder.Options);
+            return new ApplicationDBContext(optionsBuilder.Options);
         }
     }
 }

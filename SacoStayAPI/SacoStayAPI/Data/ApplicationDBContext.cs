@@ -26,6 +26,7 @@ namespace SacoStayAPI.Data
         public DbSet<SharedSpace> SharedSpaces { get; set; }
         public DbSet<SpaceShortlist> SpaceShortlists { get; set; }
         public DbSet<RoomVote> RoomVotes { get; set; }
+        public DbSet<TenantRoomProfile> TenantRoomProfiles { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder); // đừng quên gọi base để Identity hoạt động đúng
@@ -77,6 +78,17 @@ namespace SacoStayAPI.Data
             modelBuilder.Entity<PaymentTransaction>(entity =>
             {
                 entity.Property(e => e.Amount).HasPrecision(18, 2);
+            });
+
+            // TenantRoomProfile configuration
+            modelBuilder.Entity<TenantRoomProfile>(entity =>
+            {
+                entity.HasKey(e => e.UserId);
+                entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
+                entity.HasOne(e => e.User)
+                      .WithOne()
+                      .HasForeignKey<TenantRoomProfile>(e => e.UserId)
+                      .OnDelete(DeleteBehavior.Cascade);
             });
         }
     }

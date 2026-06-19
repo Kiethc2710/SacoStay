@@ -136,6 +136,31 @@ namespace SacoStayAPI.Service
             }
 
             await _unitOfWork.CompleteAsync();
+
+            // 6. Kiểm tra nếu user chọn "đã có phòng" -> gửi notification yêu cầu cập nhật thông tin phòng
+            await CheckAndNotifyRoomProfileAsync(userId, selectedOptions, roomStatusQuestion);
+        }
+
+        private async Task CheckAndNotifyRoomProfileAsync(string userId, List<LifestyleOption> selectedOptions, LifestyleQuestion? roomStatusQuestion)
+        {
+            if (roomStatusQuestion == null) return;
+
+            var roomStatusAnswer = selectedOptions.FirstOrDefault(o => o.LifestyleQuestionId == roomStatusQuestion.Id);
+            if (roomStatusAnswer == null) return;
+
+            if (IsHasRoomYesOption(roomStatusAnswer.Content))
+            {
+                if (Guid.TryParse(userId, out var userGuid))
+                {
+                    await _notificationDispatcher.NotifyAsync(
+                        userGuid,
+                        "Cập nhật thông tin phòng",
+                        "Bạn đã có phòng! Hãy cập nhật thông tin phòng của bạn để tìm bạn cùng phòng phù hợp hơn nhé.",
+                        "room_profile",
+                        "/room-profile"
+                    );
+                }
+            }
         }
         //4. Tính % phù hợp giữa 2 người dựa trên câu trả lời của họ (để gợi ý phòng ở phù hợp)
         public async Task<MatchingResultDTO> CalculateMatchingScoreAsync(string UserId, string targetUserId)

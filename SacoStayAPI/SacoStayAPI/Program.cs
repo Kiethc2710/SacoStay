@@ -62,6 +62,7 @@ namespace SacoStayAPI
             builder.Services.AddScoped<INotificationService, NotificationService>();
             builder.Services.AddScoped<INotificationDispatcher, NotificationDispatcher>();
             builder.Services.AddScoped<IRoomPostService, RoomPostService>();
+            builder.Services.AddScoped<ITenantRoomProfileService, TenantRoomProfileService>();
             builder.Services.AddScoped<IReportService, ReportService>();
             builder.Services.AddScoped<ISharedSpaceService, SharedSpaceService>();
             // Đăng ký HttpClientFactory cho hệ thống
