@@ -8,50 +8,77 @@ namespace SacoStayAPI.Service
     public class SharedSpaceService : ISharedSpaceService
     {
         private readonly IUnitOfWork _unitOfWork;
+        private readonly INotificationDispatcher _notificationDispatcher;
 
-        public SharedSpaceService(IUnitOfWork unitOfWork)
+        public SharedSpaceService(IUnitOfWork unitOfWork, INotificationDispatcher notificationDispatcher)
         {
             _unitOfWork = unitOfWork;
+            _notificationDispatcher = notificationDispatcher;
         }
         // TASK 1: Khởi tạo kênh trọ chung sau khi Matching Engine xác nhận 2 người quẹt trúng nhau
         public async Task<(bool IsSuccess, string Message, Guid? SpaceId)> CreateSharedSpaceAsync(Guid user1Id, Guid user2Id)
         {
-            // 1. Kiểm tra xem giữa 2 ông này đã có Không gian chung nào đang ACTIVE (đang chạy) chưa
-            var existingSpace = await _unitOfWork.Repository<SharedSpace>().GetQueryable()
-                .FirstOrDefaultAsync(s => ((s.User1Id == user1Id && s.User2Id == user2Id)
-                                       || (s.User1Id == user2Id && s.User2Id == user1Id))
-                                       && s.Status == "Active");
+            if (user1Id == user2Id)
+                return (false, "Không thể tạo không gian chung với chính mình.", null);
 
-            if (existingSpace != null)
+            // Đối tác đã chốt phòng với ai đó — không cho tạo không gian mới với họ
+            var targetHasFinalized = await _unitOfWork.Repository<SharedSpace>().GetQueryable()
+                .AnyAsync(s => (s.User1Id == user2Id || s.User2Id == user2Id) && s.Status == "Finalized");
+
+            if (targetHasFinalized)
             {
-                return (true, "Không gian chung giữa hai người dùng này đã tồn tại và đang hoạt động.", existingSpace.Id);
+                return (false, "Người này đã hoàn tất quá trình tìm phòng và chốt trọ với bạn cùng phòng khác.", null);
             }
 
-            // 2. Nếu chưa có thì tiến hành tạo mới tinh
+            // Kiểm tra không gian đã tồn tại giữa hai người (mọi trạng thái trừ Cancelled)
+            var existingPair = await _unitOfWork.Repository<SharedSpace>().GetQueryable()
+                .FirstOrDefaultAsync(s => ((s.User1Id == user1Id && s.User2Id == user2Id)
+                                       || (s.User1Id == user2Id && s.User2Id == user1Id))
+                                       && s.Status != "Cancelled");
+
+            if (existingPair != null)
+            {
+                if (existingPair.Status == "Finalized")
+                    return (false, "Hai bạn đã chốt phòng trọ trong không gian chung này trước đó.", null);
+
+                return (true, "Không gian chung giữa hai người dùng này đã tồn tại.", existingPair.Id);
+            }
+
             var newSpace = new SharedSpace
             {
                 Id = Guid.NewGuid(),
                 User1Id = user1Id,
                 User2Id = user2Id,
-                Status = "Active", // Mặc định tạo ra là Active để hai bên tương tác
+                Status = "Active",
                 CreatedAt = DateTime.UtcNow
             };
 
             await _unitOfWork.Repository<SharedSpace>().AddAsync(newSpace);
 
-            // Lưu xuống DB thông qua Unit of Work
             var isSaved = await _unitOfWork.CompleteAsync() > 0;
+
+            if (isSaved)
+            {
+                var creatorName = await DisplayNameForUserAsync(user1Id);
+                await _notificationDispatcher.NotifyAsync(
+                    user2Id,
+                    "Không gian chung mới",
+                    $"{creatorName} đã tạo không gian tìm trọ chung với bạn",
+                    "shared_space",
+                    $"/shared-space?spaceId={newSpace.Id}");
+            }
 
             return isSaved
                 ? (true, "Khởi tạo không gian trọ chung cho 2 người thành công!", newSpace.Id)
                 : (false, "Gặp lỗi hệ thống khi lưu không gian chung.", null);
         }
-        // TASK 2: Lấy không gian chung hiện tại và TỰ ĐỘNG PHÂN BIỆT + LẤY TÊN USER
-        public async Task<object?> GetCurrentSpaceAsync(Guid userId)
+
+        public async Task<IReadOnlyList<object>> GetUserSpacesAsync(Guid userId)
         {
-            // Bước 1: Lấy thông tin Space và Shortlist phòng trọ như cũ
-            var spaceData = await _unitOfWork.Repository<SharedSpace>().GetQueryable()
-                .Where(s => (s.User1Id == userId || s.User2Id == userId) && s.Status == "Active")
+            var spaces = await _unitOfWork.Repository<SharedSpace>().GetQueryable()
+                .Where(s => (s.User1Id == userId || s.User2Id == userId)
+                    && (s.Status == "Active" || s.Status == "PendingFinalize" || s.Status == "Finalized"))
+                .OrderByDescending(s => s.CreatedAt)
                 .Select(s => new
                 {
                     s.Id,
@@ -59,6 +86,54 @@ namespace SacoStayAPI.Service
                     s.User2Id,
                     s.Status,
                     s.CreatedAt,
+                    s.FinalizedRoomId,
+                    ShortlistRoomIds = s.Shortlists.Select(sl => sl.RoomId).ToList()
+                })
+                .ToListAsync();
+
+            if (spaces.Count == 0) return Array.Empty<object>();
+
+            var partnerIds = spaces
+                .Select(s => s.User1Id == userId ? s.User2Id : s.User1Id)
+                .Distinct()
+                .ToList();
+
+            var partnerNames = await _unitOfWork.Repository<Account>().GetQueryable()
+                .Where(u => partnerIds.Contains(u.Id))
+                .Select(u => new { u.Id, Name = $"{u.FirstName} {u.LastName}" })
+                .ToDictionaryAsync(x => x.Id, x => x.Name);
+
+            return spaces.Select(s =>
+            {
+                var partnerId = s.User1Id == userId ? s.User2Id : s.User1Id;
+                return (object)new
+                {
+                    s.Id,
+                    PartnerId = partnerId,
+                    PartnerName = partnerNames.GetValueOrDefault(partnerId) ?? "Bạn cùng phòng",
+                    s.Status,
+                    s.CreatedAt,
+                    s.FinalizedRoomId,
+                    s.ShortlistRoomIds
+                };
+            }).ToList();
+        }
+
+        public async Task<object?> GetSpaceByIdAsync(Guid userId, Guid spaceId)
+        {
+            var spaceData = await _unitOfWork.Repository<SharedSpace>().GetQueryable()
+                .Where(s => s.Id == spaceId
+                    && (s.User1Id == userId || s.User2Id == userId)
+                    && (s.Status == "Active" || s.Status == "PendingFinalize" || s.Status == "Finalized"))
+                .Select(s => new
+                {
+                    s.Id,
+                    s.User1Id,
+                    s.User2Id,
+                    s.Status,
+                    s.CreatedAt,
+                    s.FinalizedRoomId,
+                    s.FinalizeRequestedByUserId,
                     Shortlist = s.Shortlists.Select(sl => new
                     {
                         sl.Id,
@@ -74,37 +149,87 @@ namespace SacoStayAPI.Service
                 })
                 .FirstOrDefaultAsync();
 
-            // Nếu không nằm trong không gian chung nào thì out luôn
             if (spaceData == null) return null;
 
-            // Xác định chính xác Guid ID của đứa bồ tèo chung phòng với mình
-            Guid partnerId = spaceData.User1Id == userId ? spaceData.User2Id : spaceData.User1Id;
+            return await MapSpaceResponseAsync(userId, spaceData.Id, spaceData.User1Id, spaceData.User2Id,
+                spaceData.Status, spaceData.CreatedAt, spaceData.FinalizedRoomId, spaceData.FinalizeRequestedByUserId,
+                spaceData.Shortlist);
+        }
+        // TASK 2: Lấy không gian chung hiện tại và TỰ ĐỘNG PHÂN BIỆT + LẤY TÊN USER
+        public async Task<object?> GetCurrentSpaceAsync(Guid userId)
+        {
+            var spaceData = await _unitOfWork.Repository<SharedSpace>().GetQueryable()
+                .Where(s => (s.User1Id == userId || s.User2Id == userId)
+                    && (s.Status == "Active" || s.Status == "PendingFinalize" || s.Status == "Finalized"))
+                .OrderByDescending(s => s.Status == "Active")
+                .ThenByDescending(s => s.Status == "PendingFinalize")
+                .ThenByDescending(s => s.CreatedAt)
+                .Select(s => new
+                {
+                    s.Id,
+                    s.User1Id,
+                    s.User2Id,
+                    s.Status,
+                    s.CreatedAt,
+                    s.FinalizedRoomId,
+                    s.FinalizeRequestedByUserId,
+                    Shortlist = s.Shortlists.Select(sl => new
+                    {
+                        sl.Id,
+                        sl.RoomId,
+                        RoomTitle = sl.Room.Title,
+                        RoomCategory = sl.Room.Category,
+                        sl.Room.Price,
+                        Address = $"{sl.Room.DetailedAddress}, {sl.Room.District}, {sl.Room.City}",
+                        IsAddedByMe = sl.AddedByUserId == userId,
+                        MyVote = sl.Votes.Where(v => v.UserId == userId).Select(v => v.VoteStatus).FirstOrDefault() ?? "None",
+                        PartnerVote = sl.Votes.Where(v => v.UserId != userId).Select(v => v.VoteStatus).FirstOrDefault() ?? "None"
+                    })
+                })
+                .FirstOrDefaultAsync();
 
-            // -------------------------------------------------------------------------
-            // -------------------------------------------------------------------------
-            // Bước 2: Truy vấn vào bảng Account để lấy và ghép FirstName + LastName
-            // -------------------------------------------------------------------------
+            if (spaceData == null) return null;
+
+            return await MapSpaceResponseAsync(userId, spaceData.Id, spaceData.User1Id, spaceData.User2Id,
+                spaceData.Status, spaceData.CreatedAt, spaceData.FinalizedRoomId, spaceData.FinalizeRequestedByUserId,
+                spaceData.Shortlist);
+        }
+
+        private async Task<object> MapSpaceResponseAsync(
+            Guid userId,
+            Guid spaceId,
+            Guid user1Id,
+            Guid user2Id,
+            string status,
+            DateTime createdAt,
+            Guid? finalizedRoomId,
+            Guid? finalizeRequestedByUserId,
+            IEnumerable<object> shortlist)
+        {
+            Guid partnerId = user1Id == userId ? user2Id : user1Id;
+
             var myName = await _unitOfWork.Repository<Account>().GetQueryable()
                 .Where(u => u.Id == userId)
-                .Select(u => $"{u.FirstName} {u.LastName}") // ✨ Ghép chuỗi trực tiếp bằng String Interpolation
+                .Select(u => $"{u.FirstName} {u.LastName}")
                 .FirstOrDefaultAsync() ?? "Tôi";
 
             var partnerName = await _unitOfWork.Repository<Account>().GetQueryable()
                 .Where(u => u.Id == partnerId)
-                .Select(u => $"{u.FirstName} {u.LastName}") // ✨ Ghép tương tự cho đối tác (Partner)
+                .Select(u => $"{u.FirstName} {u.LastName}")
                 .FirstOrDefaultAsync() ?? "Bạn cùng phòng";
 
-            // Bước 3: Gộp tất cả lại thành 1 Object hoàn chỉnh trả về cho Front-End
             return new
             {
-                spaceData.Id,
+                Id = spaceId,
                 MyId = userId,
-                MyName = myName,               // ✨ Đã có Tên của Tôi
+                MyName = myName,
                 PartnerId = partnerId,
-                PartnerName = partnerName,     // ✨ Đã có Tên của Đối tác
-                spaceData.Status,
-                spaceData.CreatedAt,
-                spaceData.Shortlist
+                PartnerName = partnerName,
+                Status = status,
+                CreatedAt = createdAt,
+                FinalizedRoomId = finalizedRoomId,
+                FinalizeRequestedByUserId = finalizeRequestedByUserId,
+                Shortlist = shortlist
             };
         }
 
@@ -248,9 +373,36 @@ namespace SacoStayAPI.Service
             space.FinalizeRequestedByUserId = userId;
 
             _unitOfWork.Repository<SharedSpace>().Update(space);
-            return await _unitOfWork.CompleteAsync() > 0
+            var isSaved = await _unitOfWork.CompleteAsync() > 0;
+
+            if (isSaved)
+            {
+                var partnerId = space.User1Id == userId ? space.User2Id : space.User1Id;
+                var proposerName = await DisplayNameForUserAsync(userId);
+                var room = await _unitOfWork.Repository<RoomPost>().GetByIdAsync(shortlist!.RoomId);
+                var roomTitle = room?.Title ?? "một phòng trọ";
+                await _notificationDispatcher.NotifyAsync(
+                    partnerId,
+                    "Đề xuất chốt phòng",
+                    $"{proposerName} đề xuất chốt phòng \"{roomTitle}\" trong không gian chung. Hãy xem và phản hồi nhé!",
+                    "shared_space_finalize",
+                    $"/shared-space?spaceId={spaceId}");
+            }
+
+            return isSaved
                 ? (true, "Đã gửi yêu cầu chốt phòng thành công. Đang chờ bạn cùng phòng của bạn phê duyệt.")
                 : (false, "Lỗi hệ thống khi xử lý đề xuất chốt.");
+        }
+
+        private async Task<string> DisplayNameForUserAsync(Guid userId)
+        {
+            var name = await _unitOfWork.Repository<Account>().GetQueryable()
+                .Where(u => u.Id == userId)
+                .Select(u => $"{u.FirstName} {u.LastName}")
+                .FirstOrDefaultAsync();
+
+            if (!string.IsNullOrWhiteSpace(name)) return name.Trim();
+            return "Người dùng";
         }
 
         // =========================================================================
@@ -268,10 +420,32 @@ namespace SacoStayAPI.Service
             if (space.User1Id != userId && space.User2Id != userId)
                 return (false, "Bạn không có quyền can thiệp vào phòng này.");
 
+            var proposerId = space.FinalizeRequestedByUserId;
+            var finalizedRoomId = space.FinalizedRoomId;
+
             space.Status = "Finalized";
 
             _unitOfWork.Repository<SharedSpace>().Update(space);
-            return await _unitOfWork.CompleteAsync() > 0
+            var isSaved = await _unitOfWork.CompleteAsync() > 0;
+
+            if (isSaved && proposerId.HasValue)
+            {
+                var approverName = await DisplayNameForUserAsync(userId);
+                var roomTitle = "một phòng trọ";
+                if (finalizedRoomId.HasValue)
+                {
+                    var room = await _unitOfWork.Repository<RoomPost>().GetByIdAsync(finalizedRoomId.Value);
+                    if (!string.IsNullOrWhiteSpace(room?.Title)) roomTitle = room!.Title;
+                }
+                await _notificationDispatcher.NotifyAsync(
+                    proposerId.Value,
+                    "Đã chốt phòng",
+                    $"{approverName} đã đồng ý chốt phòng \"{roomTitle}\" trong không gian chung.",
+                    "shared_space_finalized",
+                    $"/shared-space?spaceId={spaceId}");
+            }
+
+            return isSaved
                 ? (true, "Xác nhận chốt phòng trọ thành công! Kênh tìm phòng chung chính thức đóng hòm.")
                 : (false, "Lỗi hệ thống khi phê duyệt chốt phòng.");
         }
@@ -288,12 +462,27 @@ namespace SacoStayAPI.Service
             if (space.User1Id != userId && space.User2Id != userId)
                 return (false, "Bạn không có quyền can thiệp.");
 
+            var partnerId = space.User1Id == userId ? space.User2Id : space.User1Id;
+
             space.Status = "Active";
             space.FinalizedRoomId = null;
             space.FinalizeRequestedByUserId = null;
 
             _unitOfWork.Repository<SharedSpace>().Update(space);
-            return await _unitOfWork.CompleteAsync() > 0
+            var isSaved = await _unitOfWork.CompleteAsync() > 0;
+
+            if (isSaved)
+            {
+                var rejecterName = await DisplayNameForUserAsync(userId);
+                await _notificationDispatcher.NotifyAsync(
+                    partnerId,
+                    "Từ chối chốt phòng",
+                    $"{rejecterName} đã từ chối đề xuất chốt phòng trong không gian chung.",
+                    "shared_space_finalize_reject",
+                    $"/shared-space?spaceId={spaceId}");
+            }
+
+            return isSaved
                 ? (true, "Đã từ chối đề xuất chốt phòng. Kênh tương tác chung đã được mở lại để hai bạn tiếp tục lọc trọ.")
                 : (false, "Lỗi hệ thống khi hủy lệnh đề xuất.");
         }

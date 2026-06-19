@@ -5,6 +5,8 @@ namespace SacoStayAPI.Service
     public interface ISharedSpaceService
     {
         Task<object?> GetCurrentSpaceAsync(Guid userId);
+        Task<object?> GetSpaceByIdAsync(Guid userId, Guid spaceId);
+        Task<IReadOnlyList<object>> GetUserSpacesAsync(Guid userId);
         Task<(bool IsSuccess, string Message)> AddToShortlistAsync(Guid userId, Guid spaceId, AddToShortlistDTO dto);
         Task<(bool IsSuccess, string Message)> VoteRoomAsync(Guid userId, Guid shortlistId, VoteRoomDTO dto);
         //Task<(bool IsSuccess, string Message)> FinalizeSpaceAsync(Guid userId, Guid spaceId, FinalizeSpaceDTO dto);

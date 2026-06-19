@@ -57,6 +57,28 @@ namespace SacoStayAPI.Controllers
         }
 
         /// <summary>
+        /// Lấy thông tin phòng theo userId (Discovery / xem hồ sơ người khác)
+        /// </summary>
+        [AllowAnonymous]
+        [HttpGet("{targetUserId:guid}")]
+        public async Task<IActionResult> GetProfileByUserId(Guid targetUserId)
+        {
+            try
+            {
+                var profile = await _tenantRoomProfileService.GetByUserIdAsync(targetUserId.ToString());
+                if (profile == null)
+                {
+                    return NotFound(new { message = "Người dùng chưa có thông tin phòng." });
+                }
+                return Ok(profile);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Lỗi hệ thống: " + ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Tạo mới thông tin phòng
         /// </summary>
         [HttpPost]

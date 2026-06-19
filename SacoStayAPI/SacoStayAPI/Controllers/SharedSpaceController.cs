@@ -63,6 +63,48 @@ namespace SacoStayAPI.Controllers
                 return StatusCode(500, new { message = "Lỗi hệ thống nội bộ.", error = ex.Message });
             }
         }
+        [HttpGet("list")]
+        public async Task<IActionResult> GetUserSpaces()
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                var data = await _spaceService.GetUserSpacesAsync(userId);
+                return Ok(data);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Lỗi hệ thống nội bộ.", error = ex.Message });
+            }
+        }
+
+        [HttpGet("{spaceId:guid}")]
+        public async Task<IActionResult> GetSpaceById(Guid spaceId)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                var data = await _spaceService.GetSpaceByIdAsync(userId, spaceId);
+
+                if (data == null)
+                    return NotFound(new { message = "Không tìm thấy không gian chung hoặc bạn không có quyền truy cập." });
+
+                return Ok(data);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Lỗi hệ thống nội bộ.", error = ex.Message });
+            }
+        }
+
         // =========================================================================
         // TASK 2: GET /api/shared-space/current
         // =========================================================================
