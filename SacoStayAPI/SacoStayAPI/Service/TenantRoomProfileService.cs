@@ -46,6 +46,7 @@ namespace SacoStayAPI.Service
                 MaxPeople = dto.MaxPeople,
                 Amenities = dto.Amenities ?? new List<string>(),
                 ExtraNotes = dto.ExtraNotes,
+                Price = dto.Price,
                 Images = new List<string>(),
                 UpdatedAt = DateTime.UtcNow
             };
@@ -70,6 +71,7 @@ namespace SacoStayAPI.Service
             if (dto.MaxPeople.HasValue) profile.MaxPeople = dto.MaxPeople;
             if (dto.Amenities != null) profile.Amenities = dto.Amenities;
             if (dto.ExtraNotes != null) profile.ExtraNotes = dto.ExtraNotes;
+            if (dto.Price.HasValue) profile.Price = dto.Price;
             if (dto.Images != null) profile.Images = dto.Images;
             profile.UpdatedAt = DateTime.UtcNow;
 
@@ -150,6 +152,7 @@ namespace SacoStayAPI.Service
                 MaxPeople = profile.MaxPeople,
                 Amenities = profile.Amenities ?? new List<string>(),
                 ExtraNotes = profile.ExtraNotes,
+                Price = profile.Price,
                 Images = profile.Images ?? new List<string>(),
                 UpdatedAt = profile.UpdatedAt
             };

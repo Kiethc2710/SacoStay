@@ -9,6 +9,7 @@ namespace SacoStayAPI.Model.DTOs
         public int? MaxPeople { get; set; }
         public List<string>? Amenities { get; set; }
         public string? ExtraNotes { get; set; }
+        public decimal? Price { get; set; }
         public List<string>? Images { get; set; }
     }
 }
