@@ -21,15 +21,6 @@ namespace SacoStayAPI.Service
             if (user1Id == user2Id)
                 return (false, "Không thể tạo không gian chung với chính mình.", null);
 
-            // Đối tác đã chốt phòng với ai đó — không cho tạo không gian mới với họ
-            var targetHasFinalized = await _unitOfWork.Repository<SharedSpace>().GetQueryable()
-                .AnyAsync(s => (s.User1Id == user2Id || s.User2Id == user2Id) && s.Status == "Finalized");
-
-            if (targetHasFinalized)
-            {
-                return (false, "Người này đã hoàn tất quá trình tìm phòng và chốt trọ với bạn cùng phòng khác.", null);
-            }
-
             // Kiểm tra không gian đã tồn tại giữa hai người (mọi trạng thái trừ Cancelled)
             var existingPair = await _unitOfWork.Repository<SharedSpace>().GetQueryable()
                 .FirstOrDefaultAsync(s => ((s.User1Id == user1Id && s.User2Id == user2Id)
@@ -39,11 +30,13 @@ namespace SacoStayAPI.Service
             if (existingPair != null)
             {
                 if (existingPair.Status == "Finalized")
-                    return (false, "Hai bạn đã chốt phòng trọ trong không gian chung này trước đó.", null);
+                    return (true, "Hai bạn đã chốt phòng trọ trong không gian chung này trước đó.", existingPair.Id);
 
                 return (true, "Không gian chung giữa hai người dùng này đã tồn tại.", existingPair.Id);
             }
 
+            // Cho phép tạo không gian mới dù người kia đã từng Finalized với ai đó
+            // (user có thể tìm phòng chung được nhiều lần với nhiều người khác nhau)
             var newSpace = new SharedSpace
             {
                 Id = Guid.NewGuid(),
