@@ -149,13 +149,26 @@ namespace SacoStayAPI
             builder.Services.AddAuthorization();
 
             // CORS — FE production + tùy chọn localhost khi dev
-            var frontendBaseUrl = builder.Configuration["Frontend:BaseUrl"] ?? "https://sacostay.id.vn";
-            var frontendSecondaryBaseUrl = builder.Configuration["Frontend:SecondaryBaseUrl"];
+            var rawFrontendBaseUrl = builder.Configuration["Frontend:BaseUrl"]
+                                     ?? Environment.GetEnvironmentVariable("Frontend__BaseUrl");
+            var rawFrontendSecondaryBaseUrl = builder.Configuration["Frontend:SecondaryBaseUrl"]
+                                              ?? Environment.GetEnvironmentVariable("Frontend__SecondaryBaseUrl");
+
+            string Normalize(string? url)
+            {
+                if (string.IsNullOrWhiteSpace(url)) return string.Empty;
+                var trimmed = url.Trim().TrimEnd('/');
+                return trimmed;
+            }
+
             var allowedOrigins = new List<string>
             {
-                frontendBaseUrl.TrimEnd('/'),
-                frontendSecondaryBaseUrl?.TrimEnd('/') ?? string.Empty
+                Normalize(rawFrontendBaseUrl),
+                Normalize(rawFrontendSecondaryBaseUrl)
             };
+            // Defaults — fallback nếu env var không được đọc (Render/prod)
+            allowedOrigins.Add("https://sacostay.id.vn");
+            allowedOrigins.Add("https://www.sacostay.id.vn");
             if (builder.Environment.IsDevelopment())
             {
                 allowedOrigins.Add("http://localhost:4200");
