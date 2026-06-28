@@ -37,15 +37,26 @@ namespace SacoStayAPI
             // ================= 1. REGISTER SERVICES =================
 
             builder.Services.AddControllers();
-builder.Services.AddSignalR(options =>
-{
-    options.EnableDetailedErrors = builder.Environment.IsDevelopment();
-}).AddJsonProtocol(options =>
-{
-    options.PayloadSerializerOptions.PropertyNamingPolicy = null;
-});
-builder.Services.AddSingleton<IUserIdProvider, SignalRUserIdProvider>();
-builder.Services.AddMemoryCache();
+            builder.Services.AddSignalR(options =>
+            {
+                options.EnableDetailedErrors = builder.Environment.IsDevelopment();
+                options.MaximumReceiveMessageSize = 32 * 1024; // 32KB
+                options.StreamBufferCapacity = 20;
+            }).AddJsonProtocol(options =>
+            {
+                options.PayloadSerializerOptions.PropertyNamingPolicy = null;
+            }).AddAzureSignalR(options =>
+            {
+                options.Endpoints = new[]
+                {
+                    new AzureSignalREndpoint(
+                        builder.Configuration["Azure:SignalRConnectionString"],
+                        new[] { new AzureSignalREndpoint("") }
+                    )
+                };
+            });
+            builder.Services.AddSingleton<IUserIdProvider, SignalRUserIdProvider>();
+            builder.Services.AddMemoryCache();
 
             // ---- AWS S3 Configuration (Đã sửa lỗi nạp đè credentials) ----
             var awsOptions = builder.Configuration.GetAWSOptions();
