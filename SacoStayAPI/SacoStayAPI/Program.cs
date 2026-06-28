@@ -36,8 +36,9 @@ namespace SacoStayAPI
             // ================= 1. REGISTER SERVICES =================
 
             builder.Services.AddControllers();
-            builder.Services.AddSignalR();
-            builder.Services.AddMemoryCache();
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<IUserIdProvider, SignalRUserIdProvider>();
+builder.Services.AddMemoryCache();
 
             // ---- AWS S3 Configuration (Đã sửa lỗi nạp đè credentials) ----
             var awsOptions = builder.Configuration.GetAWSOptions();

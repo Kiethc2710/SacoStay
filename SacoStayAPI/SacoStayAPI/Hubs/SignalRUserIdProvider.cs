@@ -11,8 +11,8 @@ namespace SacoStayAPI.Hubs
     {
         public string? GetUserId(HubConnectionContext connection)
         {
-            var raw = connection.User?.FindFirstValue(ClaimTypes.NameIdentifier)
-                ?? connection.User?.FindFirstValue(JwtRegisteredClaimNames.Sub);
+            var raw = connection.User?.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                ?? connection.User?.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrWhiteSpace(raw)) return null;
             return Guid.TryParse(raw, out var guid) ? guid.ToString() : raw.Trim();
         }
