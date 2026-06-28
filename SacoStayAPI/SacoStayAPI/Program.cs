@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.Azure.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -13,7 +15,6 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using Amazon.S3;
 using SacoStayAPI.Hubs;
-using Microsoft.AspNetCore.SignalR;
 
 namespace SacoStayAPI
 {
@@ -37,24 +38,34 @@ namespace SacoStayAPI
             // ================= 1. REGISTER SERVICES =================
 
             builder.Services.AddControllers();
-            builder.Services.AddSignalR(options =>
+
+            var signalrConnectionString = builder.Configuration["Azure:SignalRConnectionString"];
+
+            if (!string.IsNullOrWhiteSpace(signalrConnectionString))
             {
-                options.EnableDetailedErrors = builder.Environment.IsDevelopment();
-                options.MaximumReceiveMessageSize = 32 * 1024; // 32KB
-                options.StreamBufferCapacity = 20;
-            }).AddJsonProtocol(options =>
-            {
-                options.PayloadSerializerOptions.PropertyNamingPolicy = null;
-            }).AddAzureSignalR(options =>
-            {
-                options.Endpoints = new[]
+                builder.Services.AddSignalR(options =>
                 {
-                    new AzureSignalREndpoint(
-                        builder.Configuration["Azure:SignalRConnectionString"],
-                        new[] { new AzureSignalREndpoint("") }
-                    )
-                };
-            });
+                    options.EnableDetailedErrors = builder.Environment.IsDevelopment();
+                    options.MaximumReceiveMessageSize = 32 * 1024;
+                    options.StreamBufferCapacity = 20;
+                }).AddJsonProtocol(options =>
+                {
+                    options.PayloadSerializerOptions.PropertyNamingPolicy = null;
+                }).AddAzureSignalR(signalrConnectionString);
+            }
+            else
+            {
+                builder.Services.AddSignalR(options =>
+                {
+                    options.EnableDetailedErrors = builder.Environment.IsDevelopment();
+                    options.MaximumReceiveMessageSize = 32 * 1024;
+                    options.StreamBufferCapacity = 20;
+                }).AddJsonProtocol(options =>
+                {
+                    options.PayloadSerializerOptions.PropertyNamingPolicy = null;
+                });
+            }
+
             builder.Services.AddSingleton<IUserIdProvider, SignalRUserIdProvider>();
             builder.Services.AddMemoryCache();
 
