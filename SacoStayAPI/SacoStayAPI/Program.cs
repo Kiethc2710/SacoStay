@@ -37,7 +37,13 @@ namespace SacoStayAPI
             // ================= 1. REGISTER SERVICES =================
 
             builder.Services.AddControllers();
-builder.Services.AddSignalR();
+builder.Services.AddSignalR(options =>
+{
+    options.EnableDetailedErrors = builder.Environment.IsDevelopment();
+}).AddJsonProtocol(options =>
+{
+    options.PayloadSerializerOptions.PropertyNamingPolicy = null;
+});
 builder.Services.AddSingleton<IUserIdProvider, SignalRUserIdProvider>();
 builder.Services.AddMemoryCache();
 
