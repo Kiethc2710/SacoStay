@@ -13,6 +13,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using Amazon.S3;
 using SacoStayAPI.Hubs;
+using Microsoft.AspNetCore.SignalR;
 
 namespace SacoStayAPI
 {
