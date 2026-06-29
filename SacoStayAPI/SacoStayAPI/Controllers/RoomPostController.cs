@@ -1,7 +1,9 @@
-using Amazon.S3.Model;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using SacoStayAPI.Model.DTOs;
+using SacoStayAPI.Model.Entities;
 using SacoStayAPI.Service;
 using System;
 using System.IdentityModel.Tokens.Jwt;
@@ -15,10 +17,25 @@ namespace SacoStayAPI.Controllers
     public class RoomPostController : ControllerBase
     {
         private readonly IRoomPostService _roomPostService;
+        private readonly UserManager<Account> _userManager;
 
-        public RoomPostController(IRoomPostService roomPostService)
+        private const string LandlordEkycRequiredMessage =
+            "Bạn cần hoàn thành xác thực danh tính (eKYC) trước khi sử dụng kênh chủ trọ.";
+
+        public RoomPostController(IRoomPostService roomPostService, UserManager<Account> userManager)
         {
             _roomPostService = roomPostService;
+            _userManager = userManager;
+        }
+
+        private async Task<IActionResult?> RequireVerifiedLandlordAsync(string userId)
+        {
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null)
+                return NotFound(new { message = "Không tìm thấy tài khoản." });
+            if (!user.IsVerified)
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = LandlordEkycRequiredMessage });
+            return null;
         }
 
         [Authorize(AuthenticationSchemes = "Bearer")]
@@ -27,6 +44,9 @@ namespace SacoStayAPI.Controllers
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var ekycBlock = await RequireVerifiedLandlordAsync(userId);
+            if (ekycBlock != null) return ekycBlock;
 
             try
             {
@@ -55,6 +75,9 @@ namespace SacoStayAPI.Controllers
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
+            var ekycBlock = await RequireVerifiedLandlordAsync(userId);
+            if (ekycBlock != null) return ekycBlock;
+
             var result = await _roomPostService.GetMyPostsAsync(Guid.Parse(userId));
             return Ok(result);
         }
@@ -72,6 +95,9 @@ namespace SacoStayAPI.Controllers
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
+            var ekycBlock = await RequireVerifiedLandlordAsync(userId);
+            if (ekycBlock != null) return ekycBlock;
+
             try
             {
                 var result = await _roomPostService.GetRoomAnalyticsAsync(id, Guid.Parse(userId));
@@ -87,6 +113,9 @@ namespace SacoStayAPI.Controllers
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var ekycBlock = await RequireVerifiedLandlordAsync(userId);
+            if (ekycBlock != null) return ekycBlock;
 
             try
             {
@@ -119,6 +148,9 @@ namespace SacoStayAPI.Controllers
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var ekycBlock = await RequireVerifiedLandlordAsync(userId);
+            if (ekycBlock != null) return ekycBlock;
 
             try
             {

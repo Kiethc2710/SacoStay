@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using SacoStayAPI.Model.DTOs;
+using SacoStayAPI.Model.Entities;
 using SacoStayAPI.Service;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
@@ -14,10 +15,25 @@ namespace SacoStayAPI.Controllers
     public class LifestyleController : ControllerBase
     {
         private readonly LifestyleService _lifestyleService;
+        private readonly UserManager<Account> _userManager;
 
-        public LifestyleController(LifestyleService lifestyleService)
+        private const string DiscoveryEkycRequiredMessage =
+            "Bạn cần hoàn thành xác thực danh tính (eKYC) trước khi sử dụng tính năng Tìm bạn.";
+
+        public LifestyleController(LifestyleService lifestyleService, UserManager<Account> userManager)
         {
             _lifestyleService = lifestyleService;
+            _userManager = userManager;
+        }
+
+        private async Task<IActionResult?> RequireVerifiedForDiscoveryAsync(string userId)
+        {
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null)
+                return NotFound(new { message = "Không tìm thấy tài khoản." });
+            if (!user.IsVerified)
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = DiscoveryEkycRequiredMessage });
+            return null;
         }
 
         [HttpPost("question")]
@@ -120,6 +136,9 @@ namespace SacoStayAPI.Controllers
                 return BadRequest("Không thể tự tính điểm tương hợp với chính mình.");
             }
 
+            var ekycBlock = await RequireVerifiedForDiscoveryAsync(currentUserId);
+            if (ekycBlock != null) return ekycBlock;
+
             try
             {
                 // 3. Gọi Service để tính toán
@@ -188,6 +207,9 @@ namespace SacoStayAPI.Controllers
             if (string.IsNullOrEmpty(currentUserId))
                 return Unauthorized("Token không hợp lệ.");
 
+            var ekycBlock = await RequireVerifiedForDiscoveryAsync(currentUserId);
+            if (ekycBlock != null) return ekycBlock;
+
             try
             {
                 // =================================================================
@@ -239,6 +261,9 @@ namespace SacoStayAPI.Controllers
             if (string.IsNullOrEmpty(currentUserId)) return Unauthorized("Token không hợp lệ.");
             if (string.IsNullOrEmpty(targetUserId)) return BadRequest("Thiếu ID người dùng.");
 
+            var ekycBlock = await RequireVerifiedForDiscoveryAsync(currentUserId);
+            if (ekycBlock != null) return ekycBlock;
+
             try
             {
                 await _lifestyleService.SaveSwipeActionAsync(currentUserId, targetUserId, isLike);
@@ -260,6 +285,9 @@ namespace SacoStayAPI.Controllers
             if (string.IsNullOrEmpty(currentUserId))
                 return Unauthorized("Token không hợp lệ.");
 
+            var ekycBlock = await RequireVerifiedForDiscoveryAsync(currentUserId);
+            if (ekycBlock != null) return ekycBlock;
+
             var likes = await _lifestyleService.GetMyLikesAsync(currentUserId);
             return Ok(likes);
         }
@@ -277,6 +305,9 @@ namespace SacoStayAPI.Controllers
             if (string.IsNullOrWhiteSpace(targetUserId))
                 return BadRequest("Thiếu ID người dùng.");
 
+            var ekycBlock = await RequireVerifiedForDiscoveryAsync(currentUserId);
+            if (ekycBlock != null) return ekycBlock;
+
             var removed = await _lifestyleService.RemoveLikeAsync(currentUserId, targetUserId);
             if (!removed)
                 return NotFound(new { message = "Không tìm thấy lượt thích cần xoá." });
@@ -293,6 +324,9 @@ namespace SacoStayAPI.Controllers
 
             if (string.IsNullOrEmpty(currentUserId))
                 return Unauthorized("Token không hợp lệ.");
+
+            var ekycBlock = await RequireVerifiedForDiscoveryAsync(currentUserId);
+            if (ekycBlock != null) return ekycBlock;
 
             var quota = await _lifestyleService.GetSwipeQuotaAsync(currentUserId);
             return Ok(quota);

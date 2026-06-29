@@ -170,6 +170,7 @@ namespace SacoStayAPI.Controllers
                 user.LivingArea,
                 user.DateOfBirth,
                 user.Bio,
+                user.IsVerified,
                 ProfileImage = user.ProfileImages,
                 Roles = roles
             });
