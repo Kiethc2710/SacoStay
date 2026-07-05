@@ -73,8 +73,15 @@ namespace SacoStayAPI.Service
             var apiKey = _configuration["PayOS:ApiKey"] ?? string.Empty;
             var checksumKey = _configuration["PayOS:ChecksumKey"] ?? string.Empty;
             var baseUrl = _configuration["PayOS:BaseUrl"] ?? "https://api-merchant.payos.vn";
-            var cancelUrl = _configuration["PayOS:CancelUrl"] ?? string.Empty;
-            var returnUrl = _configuration["PayOS:ReturnUrl"] ?? string.Empty;
+            var frontendBaseUrl = (_configuration["Frontend:BaseUrl"] ?? _configuration["Frontend:SecondaryBaseUrl"] ?? "https://sacostay.id.vn").TrimEnd('/');
+
+            var cancelUrl = _configuration["PayOS:CancelUrl"];
+            if (string.IsNullOrWhiteSpace(cancelUrl))
+                cancelUrl = $"{frontendBaseUrl}/payment/result?status=cancelled";
+
+            var returnUrl = _configuration["PayOS:ReturnUrl"];
+            if (string.IsNullOrWhiteSpace(returnUrl))
+                returnUrl = $"{frontendBaseUrl}/payment/result?status=success";
 
             if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(checksumKey))
                 throw new ArgumentException("Thiếu cấu hình PayOS.");
