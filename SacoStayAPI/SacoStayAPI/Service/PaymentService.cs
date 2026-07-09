@@ -129,14 +129,25 @@ namespace SacoStayAPI.Service
         {
             var orderCode = query["orderCode"].ToString();
             var status = query["status"].ToString();
+            var cancel = query["cancel"].ToString();
 
             var transactions = await _unitOfWork.Repository<PaymentTransaction>().FindAsync(t => t.OrderId == orderCode);
             var transaction = transactions.FirstOrDefault();
-            if (transaction == null || transaction.Status == "Cancelled") return;
+            if (transaction == null || transaction.Status == "Cancelled" || transaction.Status == "Success") return;
+
+            var isCancelled = cancel.Equals("true", StringComparison.OrdinalIgnoreCase)
+                          || status.Equals("CANCELLED", StringComparison.OrdinalIgnoreCase)
+                          || status.Equals("cancelled", StringComparison.OrdinalIgnoreCase);
 
             if (status.Equals("PAID", StringComparison.OrdinalIgnoreCase) || status.Equals("success", StringComparison.OrdinalIgnoreCase))
             {
                 await ApplySuccessAsync(transaction);
+            }
+            else if (isCancelled)
+            {
+                transaction.Status = "Cancelled";
+                _unitOfWork.Repository<PaymentTransaction>().Update(transaction);
+                await _unitOfWork.CompleteAsync();
             }
             else if (!string.IsNullOrWhiteSpace(status))
             {
@@ -150,9 +161,17 @@ namespace SacoStayAPI.Service
         {
             var orderCode = query["orderCode"].ToString();
             var statusRaw = query["status"].ToString();
-            var payStatus =
-                statusRaw.Equals("PAID", StringComparison.OrdinalIgnoreCase) ||
-                statusRaw.Equals("success", StringComparison.OrdinalIgnoreCase)
+            var cancelRaw = query["cancel"].ToString();
+
+            // PayOS sends cancel=true when user cancels payment
+            var isCancelled = cancelRaw.Equals("true", StringComparison.OrdinalIgnoreCase)
+                           || statusRaw.Equals("CANCELLED", StringComparison.OrdinalIgnoreCase)
+                           || statusRaw.Equals("cancelled", StringComparison.OrdinalIgnoreCase);
+
+            var payStatus = isCancelled
+                ? "cancelled"
+                : (statusRaw.Equals("PAID", StringComparison.OrdinalIgnoreCase) ||
+                   statusRaw.Equals("success", StringComparison.OrdinalIgnoreCase))
                     ? "success"
                     : "failed";
 
@@ -162,7 +181,7 @@ namespace SacoStayAPI.Service
                 ? "tenant"
                 : "landlord";
 
-            var baseUrl = (_configuration["Frontend:BaseUrl"] ?? "http://localhost:4200").TrimEnd('/');
+            var baseUrl = (_configuration["Frontend:BaseUrl"] ?? _configuration["Frontend:SecondaryBaseUrl"] ?? "https://sacostay.id.vn").TrimEnd('/');
             return $"{baseUrl}/payment/result?status={payStatus}&context={context}&orderId={Uri.EscapeDataString(orderCode)}";
         }
 
