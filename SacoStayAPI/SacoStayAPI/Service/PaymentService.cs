@@ -160,6 +160,12 @@ namespace SacoStayAPI.Service
             var statusRaw = query["status"].ToString();
             var cancelRaw = query["cancel"].ToString();
 
+            _logger.LogInformation($"[DEBUG] BuildFrontendReturnUrlAsync - orderCode: {orderCode}, status: {statusRaw}, cancel: {cancelRaw}");
+
+            var frontendBaseUrl = _configuration["Frontend:BaseUrl"];
+            var secondaryBaseUrl = _configuration["Frontend:SecondaryBaseUrl"];
+            _logger.LogInformation($"[DEBUG] Frontend:BaseUrl = {frontendBaseUrl}, Frontend:SecondaryBaseUrl = {secondaryBaseUrl}");
+
             // PayOS sends cancel=true when user cancels payment
             var isCancelled = cancelRaw.Equals("true", StringComparison.OrdinalIgnoreCase)
                            || statusRaw.Equals("CANCELLED", StringComparison.OrdinalIgnoreCase)
@@ -179,7 +185,10 @@ namespace SacoStayAPI.Service
                 : "landlord";
 
             var baseUrl = (_configuration["Frontend:BaseUrl"] ?? _configuration["Frontend:SecondaryBaseUrl"] ?? "https://sacostay.id.vn").TrimEnd('/');
-            return $"{baseUrl}/payment/result?status={payStatus}&context={context}&orderId={Uri.EscapeDataString(orderCode)}";
+            _logger.LogInformation($"[DEBUG] Final baseUrl = {baseUrl}");
+            var result = $"{baseUrl}/payment/result?status={payStatus}&context={context}&orderId={Uri.EscapeDataString(orderCode)}";
+            _logger.LogInformation($"[DEBUG] Redirect to: {result}");
+            return result;
         }
 
         public async Task HandleWebhookAsync(string payload)
