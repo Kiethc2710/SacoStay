@@ -68,6 +68,9 @@ namespace SacoStayAPI.Controllers
         [HttpGet("payos-return")]
         public async Task<IActionResult> PayOSReturn()
         {
+            // PayOS gọi cancelUrl/returnUrl với params: cancel=true hoặc status=CANCELLED/PAID
+            // HandleReturnAsync đã xử lý logic update DB
+            // BuildFrontendReturnUrlAsync redirect về FE với status đúng
             await _service.HandleReturnAsync(Request.Query);
             var redirectUrl = await _service.BuildFrontendReturnUrlAsync(Request.Query);
             return Redirect(redirectUrl);
