@@ -13,7 +13,7 @@ namespace SacoStayAPI.Model.Entities
         public string? Job { get; set; }
         public string? LivingArea { get; set; }
         public string? Bio { get; set; }
-        public bool IsVerified { get; set; } = false;
+        public bool IsVerified { get; set; } = true;
         public List<string>? ProfileImages { get; set; } = new List<string>();
 
         // Tenant package
