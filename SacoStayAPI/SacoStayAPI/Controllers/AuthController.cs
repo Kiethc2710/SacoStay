@@ -176,7 +176,7 @@ namespace SacoStayAPI.Controllers
             });
         }
 
-        /// <summary>Hồ sơ công khai — discovery / chat (không trả email, phone).</summary>
+        /// <summary>Hồ sơ công khai — discovery / chat (không trả email, chỉ trả phone khi là landlord).</summary>
         [AllowAnonymous]
         [HttpGet("user/{userId}")]
         public async Task<IActionResult> GetUserPublicProfile(Guid userId)
@@ -185,7 +185,9 @@ namespace SacoStayAPI.Controllers
             if (user == null) return NotFound();
 
             var roles = await _userManager.GetRolesAsync(user);
-            return Ok(new
+            var isLandlord = roles.Contains("landlord", StringComparer.OrdinalIgnoreCase);
+
+            var response = new
             {
                 user.Id,
                 user.UserName,
@@ -198,7 +200,28 @@ namespace SacoStayAPI.Controllers
                 user.Bio,
                 ProfileImage = user.ProfileImages,
                 Roles = roles
-            });
+            };
+
+            if (isLandlord)
+            {
+                return Ok(new
+                {
+                    response.Id,
+                    response.UserName,
+                    response.FirstName,
+                    response.LastName,
+                    response.Gender,
+                    response.Job,
+                    response.LivingArea,
+                    response.DateOfBirth,
+                    response.Bio,
+                    response.ProfileImage,
+                    response.Roles,
+                    PhoneNumber = user.PhoneNumber
+                });
+            }
+
+            return Ok(response);
         }
 
         [HttpPost("register")]
@@ -220,6 +243,13 @@ namespace SacoStayAPI.Controllers
             if (existingPhone != null) return BadRequest(new { message = "Số điện thoại đã tồn tại" });
 
             var roleName = NormalizeRegisterRole(dto.Role);
+
+            // Landlord bắt buộc nhập PhoneNumber
+            if (roleName.Equals("landlord", StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(dto.PhoneNumber))
+            {
+                return BadRequest(new { message = "Số điện thoại là bắt buộc đối với tài khoản landlord." });
+            }
 
             var user = new Account
             {
