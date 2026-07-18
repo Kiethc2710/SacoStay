@@ -248,7 +248,7 @@ namespace SacoStayAPI.Controllers
             if (roleName.Equals("landlord", StringComparison.OrdinalIgnoreCase)
                 && string.IsNullOrWhiteSpace(dto.PhoneNumber))
             {
-                return BadRequest(new { message = "Số điện thoại là bắt buộc đối với tài khoản landlord." });
+                return BadRequest(new { message = "Chủ trọ bắt buộc phải nhập số điện thoại." });
             }
 
             var user = new Account
