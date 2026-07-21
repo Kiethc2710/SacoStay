@@ -121,6 +121,159 @@ namespace SacoStayAPI.Controllers
             return Ok(result);
         }
 
+        /// <summary>Thống kê doanh thu / giao dịch PayOS cho admin dashboard.</summary>
+        [Authorize(AuthenticationSchemes = "Bearer", Roles = "admin")]
+        [HttpGet("payment-stats")]
+        public async Task<IActionResult> GetPaymentStats()
+        {
+            var txs = (await _unitOfWork.Repository<PaymentTransaction>().GetAllAsync()).ToList();
+            var now = DateTime.UtcNow;
+            var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            var lastMonthStart = monthStart.AddMonths(-1);
+
+            var success = txs.Where(t =>
+                string.Equals(t.Status, "Success", StringComparison.OrdinalIgnoreCase)).ToList();
+
+            decimal revenueThisMonth = success.Where(t => t.CreatedAt >= monthStart).Sum(t => t.Amount);
+            decimal revenueLastMonth = success
+                .Where(t => t.CreatedAt >= lastMonthStart && t.CreatedAt < monthStart)
+                .Sum(t => t.Amount);
+            double? growth = null;
+            if (revenueLastMonth > 0)
+                growth = Math.Round((double)((revenueThisMonth - revenueLastMonth) / revenueLastMonth * 100), 1);
+            else if (revenueThisMonth > 0)
+                growth = 100;
+
+            var byBuyer = success
+                .GroupBy(t => string.IsNullOrWhiteSpace(t.BuyerType) ? "Unknown" : t.BuyerType)
+                .Select(g => new
+                {
+                    buyerType = g.Key,
+                    count = g.Count(),
+                    amount = g.Sum(x => x.Amount)
+                })
+                .OrderByDescending(x => x.amount)
+                .ToList();
+
+            var byStatus = txs
+                .GroupBy(t => string.IsNullOrWhiteSpace(t.Status) ? "Unknown" : t.Status)
+                .Select(g => new { status = g.Key, count = g.Count(), amount = g.Sum(x => x.Amount) })
+                .ToList();
+
+            // Chỉ trả các ngày có giao dịch thành công (bỏ qua ngày 0đ), tối đa ~90 ngày gần nhất
+            var dayFrom = now.Date.AddDays(-89);
+            var daily = success
+                .Where(t => t.CreatedAt.Date >= dayFrom)
+                .GroupBy(t => t.CreatedAt.Date)
+                .Select(g => new
+                {
+                    date = g.Key.ToString("yyyy-MM-dd"),
+                    label = g.Key.ToString("dd/MM"),
+                    amount = g.Sum(x => x.Amount),
+                    count = g.Count()
+                })
+                .OrderBy(x => x.date)
+                .ToList();
+
+            return Ok(new
+            {
+                totalRevenue = success.Sum(t => t.Amount),
+                revenueThisMonth,
+                revenueLastMonth,
+                revenueGrowthPercent = growth,
+                totalTransactions = txs.Count,
+                successCount = success.Count,
+                pendingCount = txs.Count(t => string.Equals(t.Status, "Pending", StringComparison.OrdinalIgnoreCase)),
+                failedCount = txs.Count(t => string.Equals(t.Status, "Failed", StringComparison.OrdinalIgnoreCase)),
+                cancelledCount = txs.Count(t => string.Equals(t.Status, "Cancelled", StringComparison.OrdinalIgnoreCase)),
+                byBuyerType = byBuyer,
+                byStatus,
+                dailyRevenue = daily
+            });
+        }
+
+        /// <summary>Danh sách toàn bộ giao dịch thanh toán (admin).</summary>
+        [Authorize(AuthenticationSchemes = "Bearer", Roles = "admin")]
+        [HttpGet("transactions")]
+        public async Task<IActionResult> GetTransactions(
+            [FromQuery] string? status,
+            [FromQuery] string? buyerType,
+            [FromQuery] int limit = 200)
+        {
+            var txs = (await _unitOfWork.Repository<PaymentTransaction>().GetAllAsync()).AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                txs = txs.Where(t =>
+                    string.Equals(t.Status, status, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(buyerType))
+            {
+                txs = txs.Where(t =>
+                    string.Equals(t.BuyerType, buyerType, StringComparison.OrdinalIgnoreCase));
+            }
+
+            var list = txs
+                .OrderByDescending(t => t.CreatedAt)
+                .Take(Math.Clamp(limit, 1, 1000))
+                .ToList();
+
+            var roomIds = list.Where(t => t.RoomPostId.HasValue).Select(t => t.RoomPostId!.Value).Distinct().ToList();
+            var rooms = roomIds.Count == 0
+                ? new Dictionary<Guid, RoomPost>()
+                : (await _unitOfWork.Repository<RoomPost>().GetAllAsync())
+                    .Where(r => roomIds.Contains(r.Id))
+                    .ToDictionary(r => r.Id);
+
+            var result = new List<object>();
+            foreach (var t in list)
+            {
+                string? buyerName = null;
+                string? buyerEmail = null;
+                Guid? buyerUserId = t.UserId;
+
+                // Gói chủ trọ cũ: UserId null — lấy chủ tin từ RoomPost.UserId
+                if (!buyerUserId.HasValue && t.RoomPostId.HasValue && rooms.TryGetValue(t.RoomPostId.Value, out var roomForBuyer))
+                    buyerUserId = roomForBuyer.UserId;
+
+                if (buyerUserId.HasValue)
+                {
+                    var u = await _userManager.FindByIdAsync(buyerUserId.Value.ToString());
+                    if (u != null)
+                    {
+                        buyerName = $"{u.FirstName} {u.LastName}".Trim();
+                        if (string.IsNullOrWhiteSpace(buyerName)) buyerName = u.UserName;
+                        buyerEmail = u.Email;
+                    }
+                }
+
+                string? roomTitle = null;
+                if (t.RoomPostId.HasValue && rooms.TryGetValue(t.RoomPostId.Value, out var room))
+                    roomTitle = room.Title;
+
+                result.Add(new
+                {
+                    t.Id,
+                    t.OrderId,
+                    t.Amount,
+                    t.Status,
+                    t.PaymentMethod,
+                    t.TransactionNo,
+                    t.CreatedAt,
+                    t.RoomPostId,
+                    RoomTitle = roomTitle,
+                    t.PackageName,
+                    t.BuyerType,
+                    UserId = buyerUserId,
+                    BuyerName = buyerName,
+                    BuyerEmail = buyerEmail
+                });
+            }
+
+            return Ok(result);
+        }
+
         [Authorize(AuthenticationSchemes = "Bearer", Roles = "admin")]
         [HttpPost("room-posts/{id}/approve")]
         public async Task<IActionResult> ApproveRoomPost(Guid id)

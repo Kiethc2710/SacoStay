@@ -38,7 +38,7 @@ namespace SacoStayAPI.Service
             var tier = ToLandlordTierCode(packageName);
             var amount = GetLandlordPackageAmount(tier);
             await CancelSupersededPendingLandlordPaymentsAsync(roomPostId);
-            return await CreatePaymentLinkAsync(amount, tier, roomPostId, null, "Landlord");
+            return await CreatePaymentLinkAsync(amount, tier, roomPostId, roomPost.UserId, "Landlord");
         }
 
         public async Task<string> CreateTenantPackagePaymentUrlAsync(Guid userId, string packageName)
